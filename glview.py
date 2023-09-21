@@ -36,6 +36,11 @@ class GLWidget(QtWidgets.QOpenGLWidget, QtGui.QOpenGLFunctions):
 
     def initializeGL(self):
         self.initializeOpenGLFunctions()
+
+        self.glEnable(GL.GL_DEPTH_TEST)
+        self.glEnable(GL.GL_CULL_FACE)
+        self.glClearColor(.2, .2, .2, 1)
+
         self.program = QtGui.QOpenGLShaderProgram()
         
         vertex_shader = QtGui.QOpenGLShader(QtGui.QOpenGLShader.Vertex, self)
@@ -84,13 +89,18 @@ class GLWidget(QtWidgets.QOpenGLWidget, QtGui.QOpenGLFunctions):
             self.draw_node(child_node, matrix)
 
     def paintGL(self):
+        self.glClear(GL.GL_COLOR_BUFFER_BIT or GL.GL_DEPTH_BUFFER_BIT)
+
         self.angle += 1
         self.program.bind()
 
         transform = QtGui.QMatrix4x4()
         transform.perspective(50, 1, .1, 100)
-        transform.translate(0, 2, -30)
+        transform.rotate(20, 1, 0, 0)
+        transform.translate(0, -10, -20)
         transform.rotate(self.angle, 0, 1, 0)
+        transform.rotate(-90, 1, 0, 0)
+        
         self.program.setUniformValue('transform', transform)
 
         object_transform = QtGui.QMatrix4x4()
@@ -126,7 +136,7 @@ app = QtWidgets.QApplication()
 window = QtWidgets.QMainWindow()
 gl_widget = GLWidget(gltf)
 window.setCentralWidget(gl_widget)
-window.setFixedSize(1024, 768)
+window.setFixedSize(1280, 960)
 window.show()
 
 def on_timer():
