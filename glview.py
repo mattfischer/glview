@@ -9,10 +9,11 @@ vertex_source = '''
 #version 130
 attribute highp vec3 position;
 uniform mat4 transform;
+uniform mat4 object_transform;
 
 void main()
 {
-    gl_Position = transform * vec4(position, 1);
+    gl_Position = transform * object_transform * vec4(position, 1);
 }
 '''
 
@@ -48,6 +49,40 @@ class GLWidget(QtWidgets.QOpenGLWidget, QtGui.QOpenGLFunctions):
 
         self.init_scene()
 
+    def draw_mesh(self, mesh, object_transform):
+        self.program.setUniformValue('object_transform', object_transform)
+
+        for primitive in mesh.primitives:
+            material = self.gltf.materials[primitive.material]
+            c = material.pbrMetallicRoughness.baseColorFactor
+            color = QtGui.QColor()
+            color.setRgbF(c[0], c[1], c[2], c[3])
+            self.program.setUniformValue('color', color)
+
+            accessor = self.gltf.accessors[primitive.attributes.POSITION]
+            buffer = self.buffers[accessor.bufferView]
+            buffer.bind()
+            self.program.setAttributeBuffer('position', GL.GL_FLOAT, accessor.byteOffset, 3)
+            buffer.release()
+        
+            accessor = self.gltf.accessors[primitive.indices]
+            buffer = self.buffers[accessor.bufferView]
+            buffer.bind()
+            self.glDrawElements(GL.GL_TRIANGLES, accessor.count, GL.GL_UNSIGNED_INT, VoidPtr(int(accessor.byteOffset)))
+            buffer.release()
+
+    def draw_node(self, node, object_transform):
+        if node.mesh:
+            self.draw_mesh(self.gltf.meshes[node.mesh], object_transform)
+        
+        for n in node.children:
+            child_node = self.gltf.nodes[n]
+            matrix = object_transform
+            if child_node.matrix:
+                matrix = QtGui.QMatrix4x4(*child_node.matrix).transposed() * matrix
+            
+            self.draw_node(child_node, matrix)
+
     def paintGL(self):
         self.angle += 1
         self.program.bind()
@@ -58,27 +93,13 @@ class GLWidget(QtWidgets.QOpenGLWidget, QtGui.QOpenGLFunctions):
         transform.rotate(self.angle, 0, 1, 0)
         self.program.setUniformValue('transform', transform)
 
+        object_transform = QtGui.QMatrix4x4()
+
         self.program.enableAttributeArray('position')
         
-        for mesh in self.gltf.meshes:
-            for primitive in mesh.primitives:
-                material = self.gltf.materials[primitive.material]
-                c = material.pbrMetallicRoughness.baseColorFactor
-                color = QtGui.QColor()
-                color.setRgbF(c[0], c[1], c[2], c[3])
-                self.program.setUniformValue('color', color)
-
-                accessor = self.gltf.accessors[primitive.attributes.POSITION]
-                buffer = self.buffers[accessor.bufferView]
-                buffer.bind()
-                self.program.setAttributeBuffer('position', GL.GL_FLOAT, accessor.byteOffset, 3)
-                buffer.release()
-            
-                accessor = self.gltf.accessors[primitive.indices]
-                buffer = self.buffers[accessor.bufferView]
-                buffer.bind()
-                self.glDrawElements(GL.GL_TRIANGLES, accessor.count, GL.GL_UNSIGNED_INT, VoidPtr(int(accessor.byteOffset)))
-                buffer.release()
+        scene = self.gltf.scenes[self.gltf.scene]
+        for node in scene.nodes:
+            self.draw_node(self.gltf.nodes[node], object_transform)
 
         self.program.disableAttributeArray('position')
         
