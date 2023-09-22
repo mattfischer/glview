@@ -1,9 +1,11 @@
 from PySide2 import QtCore, QtWidgets, QtGui
+from PySide2.QtCore import Slot
+from PySide2.QtCore import Qt
+
 from OpenGL import GL
 import numpy as np
 from pygltflib import GLTF2
 from PySide2.support import VoidPtr
-import struct
 
 vertex_source = '''
 #version 130
@@ -32,7 +34,9 @@ class GLWidget(QtWidgets.QOpenGLWidget, QtGui.QOpenGLFunctions):
         QtWidgets.QOpenGLWidget.__init__(self, parent)
         QtGui.QOpenGLFunctions.__init__(self)
         self.gltf = gltf
-        self.angle = 0
+        self.yaw = 0
+        self.pitch = 0
+        self.translate = QtGui.QVector3D(0, .5, 0)
 
     def initializeGL(self):
         self.initializeOpenGLFunctions()
@@ -91,14 +95,13 @@ class GLWidget(QtWidgets.QOpenGLWidget, QtGui.QOpenGLFunctions):
     def paintGL(self):
         self.glClear(GL.GL_COLOR_BUFFER_BIT or GL.GL_DEPTH_BUFFER_BIT)
 
-        self.angle += 1
         self.program.bind()
 
         transform = QtGui.QMatrix4x4()
         transform.perspective(50, 1, .1, 100)
-        transform.rotate(20, 1, 0, 0)
-        transform.translate(0, -10, -20)
-        transform.rotate(self.angle, 0, 1, 0)
+        transform.rotate(self.pitch, 1, 0, 0)
+        transform.rotate(self.yaw, 0, 1, 0)
+        transform.translate(-self.translate)
         transform.rotate(-90, 1, 0, 0)
         
         self.program.setUniformValue('transform', transform)
@@ -130,20 +133,90 @@ class GLWidget(QtWidgets.QOpenGLWidget, QtGui.QOpenGLFunctions):
             self.buffers.append(buffer)
             i += 1
 
-gltf = GLTF2().load('lowpoly__fps__tdm__game__map.glb')
+    def move(self, translate):
+        matrix = QtGui.QMatrix4x4()
+        matrix.rotate(-self.yaw, 0, 1, 0)
+        translate = matrix.mapVector(translate)
+        self.translate += translate
+
+    def rotate(self, yaw, pitch):
+        self.yaw += yaw
+        self.pitch += pitch
+        self.pitch = min(max(self.pitch, -45), 45)
+
+class MainWindow(QtWidgets.QMainWindow):
+    def __init__(self, parent=None):
+        QtWidgets.QMainWindow.__init__(self, parent)
+        self.gltf = GLTF2().load('lowpoly__fps__tdm__game__map.glb')
+        self.gl_widget = GLWidget(self.gltf)
+        self.setCentralWidget(self.gl_widget)
+        self.setFixedSize(1280, 960)
+
+        self.timer = QtCore.QTimer()
+        self.timer.timeout.connect(self.on_timer)
+        self.timer.start(30)
+
+        self.keys = {}
+        self.mouse_delta = QtGui.QVector2D()
+        self.grabbed_mouse = False
+        self.elapsed_timer = QtCore.QElapsedTimer()
+        self.elapsed_timer.start()
+
+    @Slot()
+    def on_timer(self):
+        move = QtGui.QVector3D()
+        key_map = {
+            Qt.Key_W: (0, 0, -1),
+            Qt.Key_A: (-1, 0, 0),
+            Qt.Key_S: (0, 0, 1),
+            Qt.Key_D: (1, 0, 0),
+            Qt.Key_Q: (0, 1, 0),
+            Qt.Key_E: (0, -1, 0),
+        }
+
+        delta_time = self.elapsed_timer.elapsed()
+        move_speed = 1.0
+
+        for key in key_map:
+            if(self.keys.get(key, False)):
+                move = move + QtGui.QVector3D(*key_map[key])
+        move = move * move_speed * delta_time / 1000.0
+
+        self.gl_widget.move(move)
+
+        rotate_speed = 5.0
+        yaw = self.mouse_delta.x() * rotate_speed * delta_time / 1000.0
+        pitch = self.mouse_delta.y() * rotate_speed * delta_time / 1000.0
+
+        self.gl_widget.rotate(yaw, pitch)
+
+        self.gl_widget.update()
+        self.elapsed_timer.restart()
+
+    def keyPressEvent(self, event):
+        self.keys[event.key()] = True
+        if event.key() == Qt.Key_Escape:
+            self.grabbed_mouse = False
+            self.setMouseTracking(False)
+            self.releaseMouse()
+
+    def keyReleaseEvent(self, event):
+        self.keys[event.key()] = False
+
+    def mousePressEvent(self, event):
+        self.grabMouse(QtGui.QCursor(Qt.CursorShape.BlankCursor))
+        self.setMouseTracking(True)
+        self.grabbed_mouse = True
+        QtGui.QCursor.setPos(self.mapToGlobal(QtCore.QPoint(self.width() / 2, self.height() / 2)))
+
+    def mouseMoveEvent(self, event):
+        if self.grabbed_mouse:
+            self.mouse_delta = event.pos() - QtCore.QPoint(self.width() / 2, self.height() / 2)
+            QtGui.QCursor.setPos(self.mapToGlobal(QtCore.QPoint(self.width() / 2, self.height() / 2)))
 
 app = QtWidgets.QApplication()
-window = QtWidgets.QMainWindow()
-gl_widget = GLWidget(gltf)
-window.setCentralWidget(gl_widget)
-window.setFixedSize(1280, 960)
+
+window = MainWindow()
 window.show()
-
-def on_timer():
-    gl_widget.update()
-
-timer = QtCore.QTimer()
-timer.timeout.connect(on_timer)
-timer.start(30)
 
 app.exec_()
