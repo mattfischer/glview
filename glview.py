@@ -10,12 +10,16 @@ from PySide2.support import VoidPtr
 vertex_source = '''
 #version 130
 attribute highp vec3 position;
-uniform mat4 transform;
-uniform mat4 object_transform;
+attribute highp vec3 normal;
+uniform mat4 projection_transform;
+uniform mat4 view_transform;
+uniform mat4 model_transform;
+varying float shade;
 
 void main()
 {
-    gl_Position = transform * object_transform * vec4(position, 1);
+    gl_Position = projection_transform * view_transform * model_transform * vec4(position, 1);
+    shade = max(dot(view_transform * model_transform * vec4(normal, 0), vec4(0, 0, 1, 0)), 0);
 }
 '''
 
@@ -23,9 +27,12 @@ fragment_source = '''
 #version 130
 
 uniform vec4 color;
+
+varying float shade;
+
 void main()
 {
-    gl_FragColor = color;
+    gl_FragColor = shade * color;
 }
 '''
 
@@ -58,8 +65,8 @@ class GLWidget(QtWidgets.QOpenGLWidget, QtGui.QOpenGLFunctions):
 
         self.init_scene()
 
-    def draw_mesh(self, mesh, object_transform):
-        self.program.setUniformValue('object_transform', object_transform)
+    def draw_mesh(self, mesh, model_transform):
+        self.program.setUniformValue('model_transform', model_transform)
 
         for primitive in mesh.primitives:
             material = self.gltf.materials[primitive.material]
@@ -74,19 +81,25 @@ class GLWidget(QtWidgets.QOpenGLWidget, QtGui.QOpenGLFunctions):
             self.program.setAttributeBuffer('position', GL.GL_FLOAT, accessor.byteOffset, 3)
             buffer.release()
         
+            accessor = self.gltf.accessors[primitive.attributes.NORMAL]
+            buffer = self.buffers[accessor.bufferView]
+            buffer.bind()
+            self.program.setAttributeBuffer('normal', GL.GL_FLOAT, accessor.byteOffset, 3)
+            buffer.release()
+        
             accessor = self.gltf.accessors[primitive.indices]
             buffer = self.buffers[accessor.bufferView]
             buffer.bind()
             self.glDrawElements(GL.GL_TRIANGLES, accessor.count, GL.GL_UNSIGNED_INT, VoidPtr(int(accessor.byteOffset)))
             buffer.release()
 
-    def draw_node(self, node, object_transform):
+    def draw_node(self, node, model_transform):
         if node.mesh:
-            self.draw_mesh(self.gltf.meshes[node.mesh], object_transform)
+            self.draw_mesh(self.gltf.meshes[node.mesh], model_transform)
         
         for n in node.children:
             child_node = self.gltf.nodes[n]
-            matrix = object_transform
+            matrix = model_transform
             if child_node.matrix:
                 matrix = QtGui.QMatrix4x4(*child_node.matrix).transposed() * matrix
             
@@ -97,24 +110,29 @@ class GLWidget(QtWidgets.QOpenGLWidget, QtGui.QOpenGLFunctions):
 
         self.program.bind()
 
-        transform = QtGui.QMatrix4x4()
-        transform.perspective(50, 1, .1, 100)
-        transform.rotate(self.pitch, 1, 0, 0)
-        transform.rotate(self.yaw, 0, 1, 0)
-        transform.translate(-self.translate)
-        transform.rotate(-90, 1, 0, 0)
+        projection_transform = QtGui.QMatrix4x4()
+        projection_transform.perspective(50, 1, .1, 100)
         
-        self.program.setUniformValue('transform', transform)
+        view_transform = QtGui.QMatrix4x4()
+        view_transform.rotate(self.pitch, 1, 0, 0)
+        view_transform.rotate(self.yaw, 0, 1, 0)
+        view_transform.translate(-self.translate)
+        view_transform.rotate(-90, 1, 0, 0)
+        
+        self.program.setUniformValue('projection_transform', projection_transform)
+        self.program.setUniformValue('view_transform', view_transform)
 
-        object_transform = QtGui.QMatrix4x4()
+        model_transform = QtGui.QMatrix4x4()
 
         self.program.enableAttributeArray('position')
+        self.program.enableAttributeArray('normal')
         
         scene = self.gltf.scenes[self.gltf.scene]
         for node in scene.nodes:
-            self.draw_node(self.gltf.nodes[node], object_transform)
+            self.draw_node(self.gltf.nodes[node], model_transform)
 
         self.program.disableAttributeArray('position')
+        self.program.disableAttributeArray('normal')
         
         self.program.release()
 
