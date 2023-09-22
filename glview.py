@@ -184,11 +184,11 @@ class MainWindow(QtWidgets.QMainWindow):
         self.gltf = GLTF2().load('lowpoly__fps__tdm__game__map.glb')
         self.gl_widget = GLWidget(self.gltf)
         self.setCentralWidget(self.gl_widget)
-        self.setFixedSize(1280, 960)
+        self.setFixedSize(1600, 1200)
 
         self.timer = QtCore.QTimer()
         self.timer.timeout.connect(self.on_timer)
-        self.timer.start(30)
+        self.timer.start(16)
 
         self.keys = {}
         self.grabbed_mouse = False
