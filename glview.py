@@ -44,6 +44,7 @@ class GLWidget(QtWidgets.QOpenGLWidget, QtGui.QOpenGLFunctions):
         self.yaw = 0
         self.pitch = 0
         self.translate = QtGui.QVector3D(0, .5, 0)
+        self.velocity = QtGui.QVector3D()
 
     def initializeGL(self):
         self.initializeOpenGLFunctions()
@@ -151,11 +152,26 @@ class GLWidget(QtWidgets.QOpenGLWidget, QtGui.QOpenGLFunctions):
             self.buffers.append(buffer)
             i += 1
 
-    def move(self, translate):
+    def move(self, accel, delta_time):
+        matrix = QtGui.QMatrix4x4()
+        matrix.rotate(self.yaw, 0, 1, 0)
+
+        drag = 15.0
+        drag_vector = matrix.mapVector(-self.velocity * drag)
+
+        if accel.x() == 0: accel.setX(drag_vector.x())
+        if accel.y() == 0: accel.setY(drag_vector.y())
+        if accel.z() == 0: accel.setZ(drag_vector.z())
+
         matrix = QtGui.QMatrix4x4()
         matrix.rotate(-self.yaw, 0, 1, 0)
-        translate = matrix.mapVector(translate)
-        self.translate += translate
+
+        self.velocity += matrix.mapVector(accel * delta_time)
+        max_velocity = 7.0
+        if self.velocity.length() > max_velocity:
+            self.velocity.normalize()
+            self.velocity *= max_velocity
+        self.translate += self.velocity * delta_time
 
     def rotate(self, yaw, pitch):
         self.yaw += yaw
@@ -192,14 +208,14 @@ class MainWindow(QtWidgets.QMainWindow):
         }
 
         delta_time = self.elapsed_timer.elapsed()
-        move_speed = 3.0
+        move_speed = 15.0
 
         for key in key_map:
             if(self.keys.get(key, False)):
                 move = move + QtGui.QVector3D(*key_map[key])
-        move = move * move_speed * delta_time / 1000.0
+        move = move * move_speed
 
-        self.gl_widget.move(move)
+        self.gl_widget.move(move, delta_time / 1000.0)
 
         if self.grabbed_mouse:
             mouse_delta = self.mapFromGlobal(QtGui.QCursor.pos()) - QtCore.QPoint(self.width() / 2, self.height() / 2)
@@ -225,10 +241,15 @@ class MainWindow(QtWidgets.QMainWindow):
         self.keys[event.key()] = False
 
     def mousePressEvent(self, event):
-        self.grabMouse(QtGui.QCursor(Qt.CursorShape.BlankCursor))
-        self.setMouseTracking(True)
-        self.grabbed_mouse = True
-        QtGui.QCursor.setPos(self.mapToGlobal(QtCore.QPoint(self.width() / 2, self.height() / 2)))
+        if self.grabbed_mouse:
+            self.grabbed_mouse = False
+            self.setMouseTracking(False)
+            self.releaseMouse()
+        else:
+            self.grabMouse(QtGui.QCursor(Qt.CursorShape.BlankCursor))
+            self.setMouseTracking(True)
+            self.grabbed_mouse = True
+            QtGui.QCursor.setPos(self.mapToGlobal(QtCore.QPoint(self.width() / 2, self.height() / 2)))
 
 app = QtWidgets.QApplication()
 
