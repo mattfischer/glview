@@ -36,14 +36,51 @@ void main()
 }
 '''
 
-class Renderer(QtGui.QOpenGLFunctions):
-    def __init__(self, gltf):
-        super(Renderer, self).__init__()
-        self.gltf = gltf
+class Camera:
+    def __init__(self):
         self.yaw = 0
         self.pitch = 0
         self.translate = QtGui.QVector3D(0, .5, 0)
         self.velocity = QtGui.QVector3D()
+
+    def get_transform(self):
+        transform = QtGui.QMatrix4x4()
+        transform.rotate(self.pitch, 1, 0, 0)
+        transform.rotate(self.yaw, 0, 1, 0)
+        transform.translate(-self.translate)
+        return transform
+
+    def move(self, accel, delta_time):
+        matrix = QtGui.QMatrix4x4()
+        matrix.rotate(self.yaw, 0, 1, 0)
+
+        drag = 15.0
+        drag_vector = matrix.mapVector(-self.velocity * drag)
+
+        if accel.x() == 0: accel.setX(drag_vector.x())
+        if accel.y() == 0: accel.setY(drag_vector.y())
+        if accel.z() == 0: accel.setZ(drag_vector.z())
+
+        matrix = QtGui.QMatrix4x4()
+        matrix.rotate(-self.yaw, 0, 1, 0)
+
+        self.velocity += matrix.mapVector(accel * delta_time)
+        max_velocity = 7.0
+        if self.velocity.length() > max_velocity:
+            self.velocity.normalize()
+            self.velocity *= max_velocity
+        self.translate += self.velocity * delta_time
+
+    def rotate(self, yaw, pitch):
+        self.yaw += yaw
+        self.pitch += pitch
+        self.pitch = min(max(self.pitch, -45), 45)
+
+class Renderer(QtGui.QOpenGLFunctions):
+    def __init__(self, gltf):
+        super(Renderer, self).__init__()
+        self.gltf = gltf
+        self.camera = Camera()
 
     def init_scene(self):
         self.initializeOpenGLFunctions()
@@ -125,10 +162,7 @@ class Renderer(QtGui.QOpenGLFunctions):
         projection_transform = QtGui.QMatrix4x4()
         projection_transform.perspective(50, 1, .1, 100)
         
-        view_transform = QtGui.QMatrix4x4()
-        view_transform.rotate(self.pitch, 1, 0, 0)
-        view_transform.rotate(self.yaw, 0, 1, 0)
-        view_transform.translate(-self.translate)
+        view_transform = self.camera.get_transform()
         view_transform.rotate(-90, 1, 0, 0)
         
         self.program.setUniformValue('projection_transform', projection_transform)
@@ -147,32 +181,6 @@ class Renderer(QtGui.QOpenGLFunctions):
         self.program.disableAttributeArray('normal')
         
         self.program.release()
-
-    def move(self, accel, delta_time):
-        matrix = QtGui.QMatrix4x4()
-        matrix.rotate(self.yaw, 0, 1, 0)
-
-        drag = 15.0
-        drag_vector = matrix.mapVector(-self.velocity * drag)
-
-        if accel.x() == 0: accel.setX(drag_vector.x())
-        if accel.y() == 0: accel.setY(drag_vector.y())
-        if accel.z() == 0: accel.setZ(drag_vector.z())
-
-        matrix = QtGui.QMatrix4x4()
-        matrix.rotate(-self.yaw, 0, 1, 0)
-
-        self.velocity += matrix.mapVector(accel * delta_time)
-        max_velocity = 7.0
-        if self.velocity.length() > max_velocity:
-            self.velocity.normalize()
-            self.velocity *= max_velocity
-        self.translate += self.velocity * delta_time
-
-    def rotate(self, yaw, pitch):
-        self.yaw += yaw
-        self.pitch += pitch
-        self.pitch = min(max(self.pitch, -45), 45)
 
 class GLWidget(QtWidgets.QOpenGLWidget):
     def __init__(self, renderer, parent=None):
@@ -222,7 +230,7 @@ class MainWindow(QtWidgets.QMainWindow):
                 move = move + QtGui.QVector3D(*key_map[key])
         move = move * move_speed
 
-        self.renderer.move(move, delta_time / 1000.0)
+        self.renderer.camera.move(move, delta_time / 1000.0)
 
         if self.grabbed_mouse:
             mouse_delta = self.mapFromGlobal(QtGui.QCursor.pos()) - QtCore.QPoint(self.width() / 2, self.height() / 2)
@@ -232,7 +240,7 @@ class MainWindow(QtWidgets.QMainWindow):
             yaw = mouse_delta.x() * rotate_speed
             pitch = mouse_delta.y() * rotate_speed
 
-            self.renderer.rotate(yaw, pitch)
+            self.renderer.camera.rotate(yaw, pitch)
 
         self.gl_widget.update()
         self.elapsed_timer.restart()
