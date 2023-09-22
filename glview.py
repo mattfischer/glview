@@ -40,41 +40,60 @@ class Camera:
     def __init__(self):
         self.yaw = 0
         self.pitch = 0
-        self.translate = QtGui.QVector3D(0, .5, 0)
+        self.position = QtGui.QVector3D(0, .5, 0)
         self.velocity = QtGui.QVector3D()
 
     def get_transform(self):
         transform = QtGui.QMatrix4x4()
         transform.rotate(self.pitch, 1, 0, 0)
         transform.rotate(self.yaw, 0, 1, 0)
-        transform.translate(-self.translate)
+        transform.translate(-self.position)
         return transform
 
-    def move(self, accel, delta_time):
+    def update(self, keys, mouse_delta, delta_time):
+        rotate_speed = 0.05
+        yaw = mouse_delta.x() * rotate_speed
+        pitch = mouse_delta.y() * rotate_speed
+
+        self.yaw += yaw
+        self.pitch += pitch
+        self.pitch = min(max(self.pitch, -45), 45)
+
+        dirs = QtGui.QVector3D()
+        key_map = {
+            Qt.Key_W: (0, 0, -1),
+            Qt.Key_A: (-1, 0, 0),
+            Qt.Key_S: (0, 0, 1),
+            Qt.Key_D: (1, 0, 0),
+            Qt.Key_Q: (0, -1, 0),
+            Qt.Key_E: (0, 1, 0),
+        }
+
+        accel = 15.0
+        for key in key_map:
+            if(keys.get(key, False)):
+                dirs = dirs + QtGui.QVector3D(*key_map[key])
+        accel_vector = accel * dirs
+
         matrix = QtGui.QMatrix4x4()
         matrix.rotate(self.yaw, 0, 1, 0)
 
         drag = 15.0
         drag_vector = matrix.mapVector(-self.velocity * drag)
 
-        if accel.x() == 0: accel.setX(drag_vector.x())
-        if accel.y() == 0: accel.setY(drag_vector.y())
-        if accel.z() == 0: accel.setZ(drag_vector.z())
+        if accel_vector.x() == 0: accel_vector.setX(drag_vector.x())
+        if accel_vector.y() == 0: accel_vector.setY(drag_vector.y())
+        if accel_vector.z() == 0: accel_vector.setZ(drag_vector.z())
 
         matrix = QtGui.QMatrix4x4()
         matrix.rotate(-self.yaw, 0, 1, 0)
 
-        self.velocity += matrix.mapVector(accel * delta_time)
+        self.velocity += matrix.mapVector(accel_vector * delta_time)
         max_velocity = 7.0
         if self.velocity.length() > max_velocity:
             self.velocity.normalize()
             self.velocity *= max_velocity
-        self.translate += self.velocity * delta_time
-
-    def rotate(self, yaw, pitch):
-        self.yaw += yaw
-        self.pitch += pitch
-        self.pitch = min(max(self.pitch, -45), 45)
+        self.position += self.velocity * delta_time
 
 class Renderer(QtGui.QOpenGLFunctions):
     def __init__(self, gltf):
@@ -212,36 +231,15 @@ class MainWindow(QtWidgets.QMainWindow):
 
     @Slot()
     def on_timer(self):
-        move = QtGui.QVector3D()
-        key_map = {
-            Qt.Key_W: (0, 0, -1),
-            Qt.Key_A: (-1, 0, 0),
-            Qt.Key_S: (0, 0, 1),
-            Qt.Key_D: (1, 0, 0),
-            Qt.Key_Q: (0, -1, 0),
-            Qt.Key_E: (0, 1, 0),
-        }
-
         delta_time = self.elapsed_timer.elapsed()
-        move_speed = 15.0
-
-        for key in key_map:
-            if(self.keys.get(key, False)):
-                move = move + QtGui.QVector3D(*key_map[key])
-        move = move * move_speed
-
-        self.renderer.camera.move(move, delta_time / 1000.0)
 
         if self.grabbed_mouse:
             mouse_delta = self.mapFromGlobal(QtGui.QCursor.pos()) - QtCore.QPoint(self.width() / 2, self.height() / 2)
             QtGui.QCursor.setPos(self.mapToGlobal(QtCore.QPoint(self.width() / 2, self.height() / 2)))
+        else:
+            mouse_delta = QtCore.QPoint()
 
-            rotate_speed = 0.05
-            yaw = mouse_delta.x() * rotate_speed
-            pitch = mouse_delta.y() * rotate_speed
-
-            self.renderer.camera.rotate(yaw, pitch)
-
+        self.renderer.camera.update(self.keys, mouse_delta, delta_time / 1000.0)
         self.gl_widget.update()
         self.elapsed_timer.restart()
 
