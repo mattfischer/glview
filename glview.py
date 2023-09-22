@@ -188,12 +188,12 @@ class MainWindow(QtWidgets.QMainWindow):
             Qt.Key_A: (-1, 0, 0),
             Qt.Key_S: (0, 0, 1),
             Qt.Key_D: (1, 0, 0),
-            Qt.Key_Q: (0, 1, 0),
-            Qt.Key_E: (0, -1, 0),
+            Qt.Key_Q: (0, -1, 0),
+            Qt.Key_E: (0, 1, 0),
         }
 
         delta_time = self.elapsed_timer.elapsed()
-        move_speed = 1.0
+        move_speed = 2.0
 
         for key in key_map:
             if(self.keys.get(key, False)):
