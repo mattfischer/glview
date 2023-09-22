@@ -175,7 +175,6 @@ class MainWindow(QtWidgets.QMainWindow):
         self.timer.start(30)
 
         self.keys = {}
-        self.mouse_delta = QtGui.QVector2D()
         self.grabbed_mouse = False
         self.elapsed_timer = QtCore.QElapsedTimer()
         self.elapsed_timer.start()
@@ -193,7 +192,7 @@ class MainWindow(QtWidgets.QMainWindow):
         }
 
         delta_time = self.elapsed_timer.elapsed()
-        move_speed = 2.0
+        move_speed = 3.0
 
         for key in key_map:
             if(self.keys.get(key, False)):
@@ -202,11 +201,15 @@ class MainWindow(QtWidgets.QMainWindow):
 
         self.gl_widget.move(move)
 
-        rotate_speed = 5.0
-        yaw = self.mouse_delta.x() * rotate_speed * delta_time / 1000.0
-        pitch = self.mouse_delta.y() * rotate_speed * delta_time / 1000.0
+        if self.grabbed_mouse:
+            mouse_delta = self.mapFromGlobal(QtGui.QCursor.pos()) - QtCore.QPoint(self.width() / 2, self.height() / 2)
+            QtGui.QCursor.setPos(self.mapToGlobal(QtCore.QPoint(self.width() / 2, self.height() / 2)))
 
-        self.gl_widget.rotate(yaw, pitch)
+            rotate_speed = 0.05
+            yaw = mouse_delta.x() * rotate_speed
+            pitch = mouse_delta.y() * rotate_speed
+
+            self.gl_widget.rotate(yaw, pitch)
 
         self.gl_widget.update()
         self.elapsed_timer.restart()
@@ -226,11 +229,6 @@ class MainWindow(QtWidgets.QMainWindow):
         self.setMouseTracking(True)
         self.grabbed_mouse = True
         QtGui.QCursor.setPos(self.mapToGlobal(QtCore.QPoint(self.width() / 2, self.height() / 2)))
-
-    def mouseMoveEvent(self, event):
-        if self.grabbed_mouse:
-            self.mouse_delta = event.pos() - QtCore.QPoint(self.width() / 2, self.height() / 2)
-            QtGui.QCursor.setPos(self.mapToGlobal(QtCore.QPoint(self.width() / 2, self.height() / 2)))
 
 app = QtWidgets.QApplication()
 
