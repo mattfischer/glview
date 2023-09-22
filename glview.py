@@ -36,17 +36,16 @@ void main()
 }
 '''
 
-class GLWidget(QtWidgets.QOpenGLWidget, QtGui.QOpenGLFunctions):
-    def __init__(self, gltf, parent=None):
-        QtWidgets.QOpenGLWidget.__init__(self, parent)
-        QtGui.QOpenGLFunctions.__init__(self)
+class Renderer(QtGui.QOpenGLFunctions):
+    def __init__(self, gltf):
+        super(Renderer, self).__init__()
         self.gltf = gltf
         self.yaw = 0
         self.pitch = 0
         self.translate = QtGui.QVector3D(0, .5, 0)
         self.velocity = QtGui.QVector3D()
 
-    def initializeGL(self):
+    def init_scene(self):
         self.initializeOpenGLFunctions()
 
         self.glEnable(GL.GL_DEPTH_TEST)
@@ -55,17 +54,29 @@ class GLWidget(QtWidgets.QOpenGLWidget, QtGui.QOpenGLFunctions):
 
         self.program = QtGui.QOpenGLShaderProgram()
         
-        vertex_shader = QtGui.QOpenGLShader(QtGui.QOpenGLShader.Vertex, self)
+        vertex_shader = QtGui.QOpenGLShader(QtGui.QOpenGLShader.Vertex)
         vertex_shader.compileSourceCode(vertex_source)
         self.program.addShader(vertex_shader)
 
-        fragment_shader = QtGui.QOpenGLShader(QtGui.QOpenGLShader.Fragment, self)
+        fragment_shader = QtGui.QOpenGLShader(QtGui.QOpenGLShader.Fragment)
         fragment_shader.compileSourceCode(fragment_source)
         self.program.addShader(fragment_shader)
         self.program.link()
 
-        self.init_scene()
-
+        buffer = self.gltf.buffers[0]
+        data = self.gltf.get_data_from_buffer_uri(buffer.uri)
+        data = memoryview(data)
+        self.buffers = []
+        i = 0
+        for view in self.gltf.bufferViews:
+            type = QtGui.QOpenGLBuffer.Type.IndexBuffer if i == 0 else QtGui.QOpenGLBuffer.Type.VertexBuffer
+            buffer = QtGui.QOpenGLBuffer(type)
+            buffer.create()
+            buffer.bind()
+            buffer.allocate(data[view.byteOffset:view.byteOffset + view.byteLength], view.byteLength)
+            self.buffers.append(buffer)
+            i += 1
+ 
     def draw_mesh(self, mesh, model_transform):
         self.program.setUniformValue('model_transform', model_transform)
 
@@ -106,7 +117,7 @@ class GLWidget(QtWidgets.QOpenGLWidget, QtGui.QOpenGLFunctions):
             
             self.draw_node(child_node, matrix)
 
-    def paintGL(self):
+    def render(self):
         self.glClear(GL.GL_COLOR_BUFFER_BIT or GL.GL_DEPTH_BUFFER_BIT)
 
         self.program.bind()
@@ -137,21 +148,6 @@ class GLWidget(QtWidgets.QOpenGLWidget, QtGui.QOpenGLFunctions):
         
         self.program.release()
 
-    def init_scene(self):
-        buffer = self.gltf.buffers[0]
-        data = self.gltf.get_data_from_buffer_uri(buffer.uri)
-        data = memoryview(data)
-        self.buffers = []
-        i = 0
-        for view in self.gltf.bufferViews:
-            type = QtGui.QOpenGLBuffer.Type.IndexBuffer if i == 0 else QtGui.QOpenGLBuffer.Type.VertexBuffer
-            buffer = QtGui.QOpenGLBuffer(type)
-            buffer.create()
-            buffer.bind()
-            buffer.allocate(data[view.byteOffset:view.byteOffset + view.byteLength], view.byteLength)
-            self.buffers.append(buffer)
-            i += 1
-
     def move(self, accel, delta_time):
         matrix = QtGui.QMatrix4x4()
         matrix.rotate(self.yaw, 0, 1, 0)
@@ -178,11 +174,22 @@ class GLWidget(QtWidgets.QOpenGLWidget, QtGui.QOpenGLFunctions):
         self.pitch += pitch
         self.pitch = min(max(self.pitch, -45), 45)
 
+class GLWidget(QtWidgets.QOpenGLWidget):
+    def __init__(self, renderer, parent=None):
+        super(GLWidget, self).__init__(parent)
+        self.renderer = renderer
+
+    def initializeGL(self):
+        self.renderer.init_scene()
+
+    def paintGL(self):
+        self.renderer.render()
+
 class MainWindow(QtWidgets.QMainWindow):
-    def __init__(self, parent=None):
+    def __init__(self, renderer, parent=None):
         QtWidgets.QMainWindow.__init__(self, parent)
-        self.gltf = GLTF2().load('lowpoly__fps__tdm__game__map.glb')
-        self.gl_widget = GLWidget(self.gltf)
+        self.renderer = renderer
+        self.gl_widget = GLWidget(renderer)
         self.setCentralWidget(self.gl_widget)
         self.setFixedSize(1600, 1200)
 
@@ -215,7 +222,7 @@ class MainWindow(QtWidgets.QMainWindow):
                 move = move + QtGui.QVector3D(*key_map[key])
         move = move * move_speed
 
-        self.gl_widget.move(move, delta_time / 1000.0)
+        self.renderer.move(move, delta_time / 1000.0)
 
         if self.grabbed_mouse:
             mouse_delta = self.mapFromGlobal(QtGui.QCursor.pos()) - QtCore.QPoint(self.width() / 2, self.height() / 2)
@@ -225,7 +232,7 @@ class MainWindow(QtWidgets.QMainWindow):
             yaw = mouse_delta.x() * rotate_speed
             pitch = mouse_delta.y() * rotate_speed
 
-            self.gl_widget.rotate(yaw, pitch)
+            self.renderer.rotate(yaw, pitch)
 
         self.gl_widget.update()
         self.elapsed_timer.restart()
@@ -253,7 +260,9 @@ class MainWindow(QtWidgets.QMainWindow):
 
 app = QtWidgets.QApplication()
 
-window = MainWindow()
+gltf = GLTF2().load('lowpoly__fps__tdm__game__map.glb')
+renderer = Renderer(gltf)
+window = MainWindow(renderer)
 window.show()
 
 app.exec_()
