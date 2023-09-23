@@ -4,7 +4,7 @@ from PySide2.QtCore import Qt
 
 from OpenGL import GL
 import numpy as np
-from pygltflib import GLTF2
+import pygltflib
 from PySide2.support import VoidPtr
 
 vertex_source = '''
@@ -123,16 +123,17 @@ class Renderer(QtGui.QOpenGLFunctions):
         data = self.gltf.get_data_from_buffer_uri(buffer.uri)
         data = memoryview(data)
         self.buffers = []
-        i = 0
         for view in self.gltf.bufferViews:
-            type = QtGui.QOpenGLBuffer.Type.IndexBuffer if i == 0 else QtGui.QOpenGLBuffer.Type.VertexBuffer
-            buffer = QtGui.QOpenGLBuffer(type)
+            buffer_types = {
+                pygltflib.ARRAY_BUFFER : QtGui.QOpenGLBuffer.Type.VertexBuffer,
+                pygltflib.ELEMENT_ARRAY_BUFFER : QtGui.QOpenGLBuffer.Type.IndexBuffer
+            }
+            buffer = QtGui.QOpenGLBuffer(buffer_types[view.target])
             buffer.create()
             buffer.bind()
             buffer.allocate(data[view.byteOffset:view.byteOffset + view.byteLength], view.byteLength)
             self.buffers.append(buffer)
-            i += 1
- 
+
     def draw_mesh(self, mesh, model_transform):
         self.program.setUniformValue('model_transform', model_transform)
 
@@ -266,7 +267,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
 app = QtWidgets.QApplication()
 
-gltf = GLTF2().load('lowpoly__fps__tdm__game__map.glb')
+gltf = pygltflib.GLTF2().load('lowpoly__fps__tdm__game__map.glb')
 renderer = Renderer(gltf)
 window = MainWindow(renderer)
 window.show()
