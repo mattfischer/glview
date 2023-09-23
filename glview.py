@@ -36,28 +36,14 @@ void main()
 }
 '''
 
-class Camera:
-    def __init__(self):
-        self.yaw = 0
-        self.pitch = 0
-        self.position = QtGui.QVector3D(0, .5, 0)
-        self.velocity = QtGui.QVector3D()
-
-    def get_transform(self):
-        transform = QtGui.QMatrix4x4()
-        transform.rotate(self.pitch, 1, 0, 0)
-        transform.rotate(self.yaw, 0, 1, 0)
-        transform.translate(-self.position)
-        return transform
+class InputController:
+    def __init__(self, camera):
+        self.camera = camera
 
     def update(self, keys, mouse_delta, delta_time):
         rotate_speed = 0.05
-        yaw = mouse_delta.x() * rotate_speed
-        pitch = mouse_delta.y() * rotate_speed
-
-        self.yaw += yaw
-        self.pitch += pitch
-        self.pitch = min(max(self.pitch, -45), 45)
+        self.camera.orientation += rotate_speed * QtGui.QVector3D(mouse_delta.y(), mouse_delta.x(), 0)
+        self.camera.orientation.setX(min(max(self.camera.orientation.x(), -45), 45))
 
         dirs = QtGui.QVector3D()
         key_map = {
@@ -76,24 +62,43 @@ class Camera:
         accel_vector = accel * dirs
 
         matrix = QtGui.QMatrix4x4()
-        matrix.rotate(self.yaw, 0, 1, 0)
+        matrix.rotate(self.camera.orientation.y(), 0, 1, 0)
 
         drag = 15.0
-        drag_vector = matrix.mapVector(-self.velocity * drag)
+        drag_vector = matrix.mapVector(-self.camera.velocity * drag)
 
         if accel_vector.x() == 0: accel_vector.setX(drag_vector.x())
         if accel_vector.y() == 0: accel_vector.setY(drag_vector.y())
         if accel_vector.z() == 0: accel_vector.setZ(drag_vector.z())
 
         matrix = QtGui.QMatrix4x4()
-        matrix.rotate(-self.yaw, 0, 1, 0)
+        matrix.rotate(-self.camera.orientation.y(), 0, 1, 0)
 
-        self.velocity += matrix.mapVector(accel_vector * delta_time)
+        self.camera.velocity += matrix.mapVector(accel_vector * delta_time)
         max_velocity = 7.0
-        if self.velocity.length() > max_velocity:
-            self.velocity.normalize()
-            self.velocity *= max_velocity
-        self.position += self.velocity * delta_time
+        if self.camera.velocity.length() > max_velocity:
+            self.camera.velocity.normalize()
+            self.camera.velocity *= max_velocity
+        self.camera.position += self.camera.velocity * delta_time
+
+class Camera:
+    def __init__(self):
+        self.orientation = QtGui.QVector3D()
+        self.position = QtGui.QVector3D(0, .5, 0)
+        self.velocity = QtGui.QVector3D()
+        self.vertical_fov = 50
+
+    def view_transform(self):
+        transform = QtGui.QMatrix4x4()
+        transform.rotate(self.orientation.x(), 1, 0, 0)
+        transform.rotate(self.orientation.y(), 0, 1, 0)
+        transform.translate(-self.position)
+        return transform
+
+    def projection_transform(self, aspect_ratio):
+        transform = QtGui.QMatrix4x4()
+        transform.perspective(self.vertical_fov, aspect_ratio, .1, 100)
+        return transform
 
 class Renderer(QtGui.QOpenGLFunctions):
     def __init__(self, gltf):
@@ -174,15 +179,14 @@ class Renderer(QtGui.QOpenGLFunctions):
             
             self.draw_node(child_node, matrix)
 
-    def render(self):
+    def render(self, width, height):
         self.glClear(GL.GL_COLOR_BUFFER_BIT or GL.GL_DEPTH_BUFFER_BIT)
 
         self.program.bind()
 
-        projection_transform = QtGui.QMatrix4x4()
-        projection_transform.perspective(50, 1, .1, 100)
-        
-        view_transform = self.camera.get_transform()
+        projection_transform = self.camera.projection_transform(float(width) / float(height))
+
+        view_transform = self.camera.view_transform()
         view_transform.rotate(-90, 1, 0, 0)
         
         self.program.setUniformValue('projection_transform', projection_transform)
@@ -211,12 +215,13 @@ class GLWidget(QtWidgets.QOpenGLWidget):
         self.renderer.init_scene()
 
     def paintGL(self):
-        self.renderer.render()
+        self.renderer.render(self.width(), self.height())
 
 class MainWindow(QtWidgets.QMainWindow):
     def __init__(self, renderer, parent=None):
         QtWidgets.QMainWindow.__init__(self, parent)
         self.renderer = renderer
+        self.input_controller = InputController(renderer.camera)
         self.gl_widget = GLWidget(renderer)
         self.setCentralWidget(self.gl_widget)
         self.setFixedSize(1600, 1200)
@@ -240,7 +245,7 @@ class MainWindow(QtWidgets.QMainWindow):
         else:
             mouse_delta = QtCore.QPoint()
 
-        self.renderer.camera.update(self.keys, mouse_delta, delta_time / 1000.0)
+        self.input_controller.update(self.keys, mouse_delta, delta_time / 1000.0)
         self.gl_widget.update()
         self.elapsed_timer.restart()
 
