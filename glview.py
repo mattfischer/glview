@@ -19,7 +19,7 @@ varying float shade;
 void main()
 {
     gl_Position = projection_transform * view_transform * model_transform * vec4(position, 1);
-    shade = max(dot(view_transform * model_transform * vec4(normal, 0), vec4(0, 0, 1, 0)), 0);
+    shade = max(dot(view_transform * model_transform * vec4(normal, 0), vec4(0, -1, 0, 0)), 0);
 }
 '''
 
@@ -47,12 +47,12 @@ class InputController:
 
         dirs = QtGui.QVector3D()
         key_map = {
-            Qt.Key_W: (0, 0, -1),
+            Qt.Key_W: (0, 1, 0),
             Qt.Key_A: (-1, 0, 0),
-            Qt.Key_S: (0, 0, 1),
+            Qt.Key_S: (0, -1, 0),
             Qt.Key_D: (1, 0, 0),
-            Qt.Key_Q: (0, -1, 0),
-            Qt.Key_E: (0, 1, 0),
+            Qt.Key_Q: (0, 0, -1),
+            Qt.Key_E: (0, 0, 1),
         }
 
         accel = 15.0
@@ -62,7 +62,7 @@ class InputController:
         accel_vector = accel * dirs
 
         matrix = QtGui.QMatrix4x4()
-        matrix.rotate(self.camera.orientation.y(), 0, 1, 0)
+        matrix.rotate(self.camera.orientation.y(), 0, 0, 1)
 
         drag = 15.0
         drag_vector = matrix.mapVector(-self.camera.velocity * drag)
@@ -72,7 +72,7 @@ class InputController:
         if accel_vector.z() == 0: accel_vector.setZ(drag_vector.z())
 
         matrix = QtGui.QMatrix4x4()
-        matrix.rotate(-self.camera.orientation.y(), 0, 1, 0)
+        matrix.rotate(-self.camera.orientation.y(), 0, 0, 1)
 
         self.camera.velocity += matrix.mapVector(accel_vector * delta_time)
         max_velocity = 7.0
@@ -84,14 +84,14 @@ class InputController:
 class Camera:
     def __init__(self):
         self.orientation = QtGui.QVector3D()
-        self.position = QtGui.QVector3D(0, .5, 0)
+        self.position = QtGui.QVector3D(0, 0, .5)
         self.velocity = QtGui.QVector3D()
         self.vertical_fov = 50
 
     def view_transform(self):
         transform = QtGui.QMatrix4x4()
         transform.rotate(self.orientation.x(), 1, 0, 0)
-        transform.rotate(self.orientation.y(), 0, 1, 0)
+        transform.rotate(self.orientation.y(), 0, 0, 1)
         transform.translate(-self.position)
         return transform
 
@@ -185,9 +185,9 @@ class Renderer(QtGui.QOpenGLFunctions):
         self.program.bind()
 
         projection_transform = self.camera.projection_transform(float(width) / float(height))
+        projection_transform.rotate(-90, 1, 0, 0)
 
         view_transform = self.camera.view_transform()
-        view_transform.rotate(-90, 1, 0, 0)
         
         self.program.setUniformValue('projection_transform', projection_transform)
         self.program.setUniformValue('view_transform', view_transform)
