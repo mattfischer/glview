@@ -14,12 +14,14 @@ attribute highp vec3 normal;
 uniform mat4 projection_transform;
 uniform mat4 view_transform;
 uniform mat4 model_transform;
-varying float shade;
+varying vec3 frag_pos;
+varying vec3 frag_normal;
 
 void main()
 {
     gl_Position = projection_transform * view_transform * model_transform * vec4(position, 1);
-    shade = max(dot(view_transform * model_transform * vec4(normal, 0), vec4(0, -1, 0, 0)), 0);
+    frag_pos = (model_transform * vec4(position, 1)).xyz;
+    frag_normal = normal;
 }
 '''
 
@@ -28,10 +30,15 @@ fragment_source = '''
 
 uniform vec4 color;
 
-varying float shade;
+varying vec3 frag_pos;
+varying vec3 frag_normal;
 
 void main()
 {
+    vec3 light_pos = vec3(20, 0, 30);
+    vec3 light_vec = light_pos - frag_pos;
+    float light_dist = length(light_vec);
+    float shade = max(dot(light_vec / light_dist, frag_normal), 0);
     gl_FragColor = shade * color;
 }
 '''
