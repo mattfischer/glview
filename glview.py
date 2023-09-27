@@ -34,20 +34,24 @@ fragment_source = '''
 
 uniform vec4 color;
 uniform vec3 light_position;
-uniform sampler2D shadow_texture;
+uniform sampler2DShadow shadow_texture;
 
 varying vec3 frag_pos;
 varying vec3 frag_normal;
 varying vec4 pos_light_space;
 
+mat4 shadow_bias = mat4(vec4(.5,  0,  0,  0),
+                        vec4( 0, .5,  0,  0),
+                        vec4( 0,  0, .5,  0),
+                        vec4(.5, .5, .5,  1));
 void main()
 {
     vec3 light_vec = light_position - frag_pos;
     float light_dist = length(light_vec);
     float shade = max(dot(light_vec / light_dist, frag_normal), 0);
-    vec3 light_coord = pos_light_space.xyz / pos_light_space.w;
-    float shadow_distance = texture(shadow_texture, light_coord.xy / 2 + vec2(.5, .5)).r;
-    float shadow = ((light_coord.z + 1) / 2 <= shadow_distance + .0005) ? 1 : 0;
+    vec4 light_coord = shadow_bias * pos_light_space;
+    float shadow_bias = 0.0005 * light_coord.w / shade;
+    float shadow = textureProj(shadow_texture, light_coord - vec4(0, 0, shadow_bias, 0));
     gl_FragColor = (shadow * shade + .25) * color;
 }
 '''
@@ -235,10 +239,12 @@ class Renderer(QtGui.QOpenGLFunctions):
         self.shadow_texture = GL.glGenTextures(1)
         self.glBindTexture(GL.GL_TEXTURE_2D, self.shadow_texture)
         self.glTexImage2D(GL.GL_TEXTURE_2D, 0, GL.GL_DEPTH_COMPONENT, 1024, 1024, 0, GL.GL_DEPTH_COMPONENT, GL.GL_FLOAT, VoidPtr(0))
-        self.glTexParameteri(GL.GL_TEXTURE_2D, GL.GL_TEXTURE_MIN_FILTER, GL.GL_NEAREST);
-        self.glTexParameteri(GL.GL_TEXTURE_2D, GL.GL_TEXTURE_MAG_FILTER, GL.GL_NEAREST);
-        self.glTexParameteri(GL.GL_TEXTURE_2D, GL.GL_TEXTURE_WRAP_S, GL.GL_REPEAT); 
-        self.glTexParameteri(GL.GL_TEXTURE_2D, GL.GL_TEXTURE_WRAP_T, GL.GL_REPEAT); 
+        self.glTexParameteri(GL.GL_TEXTURE_2D, GL.GL_TEXTURE_MIN_FILTER, GL.GL_LINEAR)
+        self.glTexParameteri(GL.GL_TEXTURE_2D, GL.GL_TEXTURE_MAG_FILTER, GL.GL_LINEAR)
+        self.glTexParameteri(GL.GL_TEXTURE_2D, GL.GL_TEXTURE_WRAP_S, GL.GL_CLAMP_TO_EDGE)
+        self.glTexParameteri(GL.GL_TEXTURE_2D, GL.GL_TEXTURE_WRAP_T, GL.GL_CLAMP_TO_EDGE)
+        self.glTexParameteri(GL.GL_TEXTURE_2D, GL.GL_TEXTURE_COMPARE_MODE, GL.GL_COMPARE_REF_TO_TEXTURE)
+        self.glTexParameteri(GL.GL_TEXTURE_2D, GL.GL_TEXTURE_COMPARE_FUNC, GL.GL_LEQUAL)
 
         self.shadow_fbo = GL.glGenFramebuffers(1)
         self.glBindFramebuffer(GL.GL_FRAMEBUFFER, self.shadow_fbo)
