@@ -149,19 +149,15 @@ class ShadowRenderer:
 
             view_transform = QtGui.QMatrix4x4()
             view_transform.scale(1, -1, -1)
-            if face == GL.GL_TEXTURE_CUBE_MAP_POSITIVE_X:
-                view_transform.rotate(-90, 0, 1, 0)
-            elif face == GL.GL_TEXTURE_CUBE_MAP_NEGATIVE_X:
-                view_transform.rotate(90, 0, 1, 0)
-            elif face == GL.GL_TEXTURE_CUBE_MAP_POSITIVE_Y:
-                view_transform.rotate(90, 1, 0, 0)
-            elif face == GL.GL_TEXTURE_CUBE_MAP_NEGATIVE_Y:
-                view_transform.rotate(-90, 1, 0, 0)
-            elif face == GL.GL_TEXTURE_CUBE_MAP_POSITIVE_Z:
-                view_transform.rotate(180, 0, 1, 0)
-            elif face == GL.GL_TEXTURE_CUBE_MAP_NEGATIVE_Z:
-                view_transform.rotate(180, 0, 1, 0)
-
+            face_transforms = {
+                GL.GL_TEXTURE_CUBE_MAP_POSITIVE_X: (-90, 0, 1, 0),
+                GL.GL_TEXTURE_CUBE_MAP_NEGATIVE_X: (90, 0, 1, 0),
+                GL.GL_TEXTURE_CUBE_MAP_POSITIVE_Y: (90, 1, 0, 0),
+                GL.GL_TEXTURE_CUBE_MAP_NEGATIVE_Y: (-90, 1, 0, 0),
+                GL.GL_TEXTURE_CUBE_MAP_POSITIVE_Z: (0, 0, 1, 0),
+                GL.GL_TEXTURE_CUBE_MAP_NEGATIVE_Z: (180, 0, 1, 0)
+            }
+            view_transform.rotate(*face_transforms[face])
             view_transform.translate(-self.light.position)
             
             self.shadow_program.setUniformValue('projection_transform', projection_transform)
