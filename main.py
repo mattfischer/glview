@@ -7,7 +7,7 @@ from objects import Camera, Light, GltfObject, Scene
 from input import InputController
 
 class GLWidget(QtWidgets.QOpenGLWidget):
-    def __init__(self, renderer, parent=None):
+    def __init__(self, renderer: Renderer, parent: QtWidgets.QWidget = None):
         super(GLWidget, self).__init__(parent)
         self.renderer = renderer
         self.gl = QtGui.QOpenGLFunctions()
@@ -20,7 +20,7 @@ class GLWidget(QtWidgets.QOpenGLWidget):
         self.renderer.render(self.gl, self.width(), self.height())
 
 class MainWindow(QtWidgets.QMainWindow):
-    def __init__(self, renderer, parent=None):
+    def __init__(self, renderer: Renderer, parent: QtWidgets.QWidget = None):
         QtWidgets.QMainWindow.__init__(self, parent)
         self.renderer = renderer
         self.input_controller = InputController(renderer.scene)
@@ -51,17 +51,17 @@ class MainWindow(QtWidgets.QMainWindow):
         self.gl_widget.update()
         self.elapsed_timer.restart()
 
-    def keyPressEvent(self, event):
+    def keyPressEvent(self, event: QtCore.QEvent):
         self.keys[event.key()] = True
         if event.key() == Qt.Key_Escape:
             self.grabbed_mouse = False
             self.setMouseTracking(False)
             self.releaseMouse()
 
-    def keyReleaseEvent(self, event):
+    def keyReleaseEvent(self, event: QtCore.QEvent):
         self.keys[event.key()] = False
 
-    def mousePressEvent(self, event):
+    def mousePressEvent(self, event: QtCore.QEvent):
         if self.grabbed_mouse:
             self.grabbed_mouse = False
             self.setMouseTracking(False)

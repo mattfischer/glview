@@ -1,11 +1,13 @@
 from PySide2 import QtGui
 from PySide2.QtCore import Qt
 
+from objects import Scene
+
 class InputController:
-    def __init__(self, scene):
+    def __init__(self, scene: Scene):
         self.scene = scene
 
-    def update(self, keys, mouse_delta, delta_time):
+    def update(self, keys: dict[Qt.Key, bool], mouse_delta: QtGui.QVector2D, delta_time: float):
         rotate_speed = 0.05
         self.scene.camera.orientation += rotate_speed * QtGui.QVector3D(mouse_delta.y(), mouse_delta.x(), 0)
         self.scene.camera.orientation.setX(min(max(self.scene.camera.orientation.x(), -45), 45))

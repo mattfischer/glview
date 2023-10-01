@@ -4,6 +4,8 @@ from PySide2.support import VoidPtr
 from OpenGL import GL
 import pygltflib
 
+from objects import GltfObject, Light, Scene
+
 CUBE_FACES = [
     GL.GL_TEXTURE_CUBE_MAP_POSITIVE_X,
     GL.GL_TEXTURE_CUBE_MAP_NEGATIVE_X,
@@ -13,11 +15,31 @@ CUBE_FACES = [
     GL.GL_TEXTURE_CUBE_MAP_NEGATIVE_Z,
 ]
 
+class ShaderCache:
+    def __init__(self):
+        self.cache = {}
+
+    def get_shader(self, name: str) -> QtGui.QOpenGLShaderProgram:
+        if name not in self.cache:
+            program = QtGui.QOpenGLShaderProgram()
+        
+            vertex_shader = QtGui.QOpenGLShader(QtGui.QOpenGLShader.Vertex)
+            vertex_shader.compileSourceFile('shaders/%s.vert' % name)
+            program.addShader(vertex_shader)
+
+            fragment_shader = QtGui.QOpenGLShader(QtGui.QOpenGLShader.Fragment)
+            fragment_shader.compileSourceFile('shaders/%s.frag' % name)
+            program.addShader(fragment_shader)
+            program.link()
+            self.cache[name] = program
+
+        return self.cache[name]
+
 class GltfRenderer:
-    def __init__(self, gltf_object):
+    def __init__(self, gltf_object: GltfObject):
         self.gltf_object = gltf_object
 
-    def init_gl(self, gl, shader_cache):
+    def init_gl(self, gl: QtGui.QOpenGLFunctions, shader_cache: ShaderCache):
         self.program = shader_cache.get_shader('main')
         self.program.enableAttributeArray('position')
         self.program.enableAttributeArray('normal')
@@ -37,7 +59,7 @@ class GltfRenderer:
             buffer.allocate(data[view.byteOffset:view.byteOffset + view.byteLength], view.byteLength)
             self.buffers.append(buffer)
 
-    def draw_mesh(self, mesh, gl, model_transform, program):
+    def draw_mesh(self, mesh: pygltflib.Mesh, gl: QtGui.QOpenGLFunctions, model_transform: QtGui.QMatrix4x4, program: QtGui.QOpenGLShaderProgram):
         program.setUniformValue('model_transform', model_transform)
 
         for primitive in mesh.primitives:
@@ -65,7 +87,7 @@ class GltfRenderer:
             gl.glDrawElements(GL.GL_TRIANGLES, accessor.count, GL.GL_UNSIGNED_INT, VoidPtr(int(accessor.byteOffset)))
             buffer.release()
 
-    def draw_node(self, node, gl, model_transform, program):
+    def draw_node(self, node: pygltflib.Node, gl: QtGui.QOpenGLFunctions, model_transform: QtGui.QMatrix4x4, program: QtGui.QOpenGLShaderProgram):
         if node.mesh:
             self.draw_mesh(self.gltf_object.gltf.meshes[node.mesh], gl, model_transform, program)
         
@@ -77,17 +99,17 @@ class GltfRenderer:
             
             self.draw_node(child_node, gl, matrix, program)
 
-    def render(self, gl, program):
+    def render(self, gl: QtGui.QOpenGLFunctions, program: QtGui.QOpenGLShaderProgram):
         model_transform = QtGui.QMatrix4x4()
         scene = self.gltf_object.gltf.scenes[self.gltf_object.gltf.scene]
         for node in scene.nodes:
             self.draw_node(self.gltf_object.gltf.nodes[node], gl, model_transform, program)
 
 class ShadowRenderer:
-    def __init__(self, light):
+    def __init__(self, light: Light):
         self.light = light
 
-    def init_gl(self, gl, shader_cache):
+    def init_gl(self, gl: QtGui.QOpenGLFunctions, shader_cache: ShaderCache):
         self.shadow_program = shader_cache.get_shader('shadow')
         self.shadow_program.enableAttributeArray('position')
         self.shadow_program.enableAttributeArray('normal')
@@ -109,7 +131,7 @@ class ShadowRenderer:
         GL.glDrawBuffer(GL.GL_NONE)
         gl.glBindFramebuffer(GL.GL_FRAMEBUFFER, 0)
 
-    def render(self, gl, scene):
+    def render(self, gl: QtGui.QOpenGLFunctions, scene: Scene):
         if not self.light.need_shadow_render:
             return
 
@@ -153,33 +175,15 @@ class ShadowRenderer:
         gl.glBindFramebuffer(GL.GL_FRAMEBUFFER, 0)
         self.light.need_shadow_render = False
 
-class ShaderCache:
-    def __init__(self):
-        self.cache = {}
-
-    def get_shader(self, name):
-        if name not in self.cache:
-            program = QtGui.QOpenGLShaderProgram()
-        
-            vertex_shader = QtGui.QOpenGLShader(QtGui.QOpenGLShader.Vertex)
-            vertex_shader.compileSourceFile('shaders/%s.vert' % name)
-            program.addShader(vertex_shader)
-
-            fragment_shader = QtGui.QOpenGLShader(QtGui.QOpenGLShader.Fragment)
-            fragment_shader.compileSourceFile('shaders/%s.frag' % name)
-            program.addShader(fragment_shader)
-            program.link()
-            self.cache[name] = program
-
-        return self.cache[name]
-
 class Renderer:
-    def __init__(self, scene):
-        super(Renderer, self).__init__()
+    def __init__(self, scene: Scene):
         self.scene = scene
+        for obj in self.scene.objects:
+            obj.renderer = GltfRenderer(obj)
+        self.scene.light.renderer = ShadowRenderer(self.scene.light)
         self.shader_cache = ShaderCache()
 
-    def init_gl(self, gl):
+    def init_gl(self, gl: QtGui.QOpenGLFunctions):
         gl.glEnable(GL.GL_DEPTH_TEST)
         gl.glEnable(GL.GL_CULL_FACE)
         gl.glClearColor(.2, .2, .2, 1)
@@ -188,7 +192,7 @@ class Renderer:
             obj.renderer.init_gl(gl, self.shader_cache)
         self.scene.light.renderer.init_gl(gl, self.shader_cache)
 
-    def render(self, gl, width, height):
+    def render(self, gl: QtGui.QOpenGLFunctions, width: int, height: int):
         self.scene.light.renderer.render(gl, self.scene)
 
         gl.glClear(GL.GL_COLOR_BUFFER_BIT)
