@@ -1,77 +1,20 @@
 from PySide2 import QtCore, QtWidgets, QtGui
 from PySide2.QtCore import Slot
 from PySide2.QtCore import Qt
+from PySide2.support import VoidPtr
 
 from OpenGL import GL
 import numpy as np
 import pygltflib
-from PySide2.support import VoidPtr
-import math
 
-class InputController:
-    def __init__(self, camera, light):
-        self.camera = camera
-        self.light = light
-
-    def update(self, keys, mouse_delta, delta_time):
-        rotate_speed = 0.05
-        self.camera.orientation += rotate_speed * QtGui.QVector3D(mouse_delta.y(), mouse_delta.x(), 0)
-        self.camera.orientation.setX(min(max(self.camera.orientation.x(), -45), 45))
-
-        light_dirs = QtGui.QVector3D()
-        light_key_map = {
-            Qt.Key_I: (0, 1, 0),
-            Qt.Key_J: (-1, 0, 0),
-            Qt.Key_K: (0, -1, 0),
-            Qt.Key_L: (1, 0, 0),
-            Qt.Key_U: (0, 0, -1),
-            Qt.Key_O: (0, 0, 1),
-        }
-        light_moved = False
-        for key in light_key_map:
-            if(keys.get(key, False)):
-                light_dirs = light_dirs + QtGui.QVector3D(*light_key_map[key])
-                light_moved = True
-
-        light_velocity = 3.0
-        self.light.position += light_dirs * light_velocity * delta_time
-        self.light.need_shadow_render = light_moved
-
-        dirs = QtGui.QVector3D()
-        key_map = {
-            Qt.Key_W: (0, 1, 0),
-            Qt.Key_A: (-1, 0, 0),
-            Qt.Key_S: (0, -1, 0),
-            Qt.Key_D: (1, 0, 0),
-            Qt.Key_Q: (0, 0, -1),
-            Qt.Key_E: (0, 0, 1),
-        }
-
-        accel = 15.0
-        for key in key_map:
-            if(keys.get(key, False)):
-                dirs = dirs + QtGui.QVector3D(*key_map[key])
-        accel_vector = accel * dirs
-
-        matrix = QtGui.QMatrix4x4()
-        matrix.rotate(self.camera.orientation.y(), 0, 0, 1)
-
-        drag = 15.0
-        drag_vector = matrix.mapVector(-self.camera.velocity * drag)
-
-        if accel_vector.x() == 0: accel_vector.setX(drag_vector.x())
-        if accel_vector.y() == 0: accel_vector.setY(drag_vector.y())
-        if accel_vector.z() == 0: accel_vector.setZ(drag_vector.z())
-
-        matrix = QtGui.QMatrix4x4()
-        matrix.rotate(-self.camera.orientation.y(), 0, 0, 1)
-
-        self.camera.velocity += matrix.mapVector(accel_vector * delta_time)
-        max_velocity = 7.0
-        if self.camera.velocity.length() > max_velocity:
-            self.camera.velocity.normalize()
-            self.camera.velocity *= max_velocity
-        self.camera.position += self.camera.velocity * delta_time
+CUBE_FACES = [
+    GL.GL_TEXTURE_CUBE_MAP_POSITIVE_X,
+    GL.GL_TEXTURE_CUBE_MAP_NEGATIVE_X,
+    GL.GL_TEXTURE_CUBE_MAP_POSITIVE_Y,
+    GL.GL_TEXTURE_CUBE_MAP_NEGATIVE_Y,
+    GL.GL_TEXTURE_CUBE_MAP_POSITIVE_Z,
+    GL.GL_TEXTURE_CUBE_MAP_NEGATIVE_Z,
+]
 
 class Camera:
     def __init__(self):
@@ -120,15 +63,6 @@ class Light:
         transform = QtGui.QMatrix4x4()
         transform.perspective(90, 1, .1, 30)
         return transform
-
-CUBE_FACES = [
-    GL.GL_TEXTURE_CUBE_MAP_POSITIVE_X,
-    GL.GL_TEXTURE_CUBE_MAP_NEGATIVE_X,
-    GL.GL_TEXTURE_CUBE_MAP_POSITIVE_Y,
-    GL.GL_TEXTURE_CUBE_MAP_NEGATIVE_Y,
-    GL.GL_TEXTURE_CUBE_MAP_POSITIVE_Z,
-    GL.GL_TEXTURE_CUBE_MAP_NEGATIVE_Z,
-]
 
 class Renderer(QtGui.QOpenGLFunctions):
     def __init__(self, gltf):
@@ -302,76 +236,3 @@ class Renderer(QtGui.QOpenGLFunctions):
         self.program.disableAttributeArray('normal')
         
         self.program.release()
-
-class GLWidget(QtWidgets.QOpenGLWidget):
-    def __init__(self, renderer, parent=None):
-        super(GLWidget, self).__init__(parent)
-        self.renderer = renderer
-
-    def initializeGL(self):
-        self.renderer.init_scene()
-
-    def paintGL(self):
-        self.renderer.render(self.width(), self.height())
-
-class MainWindow(QtWidgets.QMainWindow):
-    def __init__(self, renderer, parent=None):
-        QtWidgets.QMainWindow.__init__(self, parent)
-        self.renderer = renderer
-        self.input_controller = InputController(renderer.camera, renderer.light)
-        self.gl_widget = GLWidget(renderer)
-        self.setCentralWidget(self.gl_widget)
-        self.setFixedSize(1600, 1200)
-
-        self.timer = QtCore.QTimer()
-        self.timer.timeout.connect(self.on_timer)
-        self.timer.start(16)
-
-        self.keys = {}
-        self.grabbed_mouse = False
-        self.elapsed_timer = QtCore.QElapsedTimer()
-        self.elapsed_timer.start()
-
-    @Slot()
-    def on_timer(self):
-        delta_time = self.elapsed_timer.elapsed()
-
-        if self.grabbed_mouse:
-            mouse_delta = self.mapFromGlobal(QtGui.QCursor.pos()) - QtCore.QPoint(self.width() / 2, self.height() / 2)
-            QtGui.QCursor.setPos(self.mapToGlobal(QtCore.QPoint(self.width() / 2, self.height() / 2)))
-        else:
-            mouse_delta = QtCore.QPoint()
-
-        self.input_controller.update(self.keys, mouse_delta, delta_time / 1000.0)
-        self.gl_widget.update()
-        self.elapsed_timer.restart()
-
-    def keyPressEvent(self, event):
-        self.keys[event.key()] = True
-        if event.key() == Qt.Key_Escape:
-            self.grabbed_mouse = False
-            self.setMouseTracking(False)
-            self.releaseMouse()
-
-    def keyReleaseEvent(self, event):
-        self.keys[event.key()] = False
-
-    def mousePressEvent(self, event):
-        if self.grabbed_mouse:
-            self.grabbed_mouse = False
-            self.setMouseTracking(False)
-            self.releaseMouse()
-        else:
-            self.grabMouse(QtGui.QCursor(Qt.CursorShape.BlankCursor))
-            self.setMouseTracking(True)
-            self.grabbed_mouse = True
-            QtGui.QCursor.setPos(self.mapToGlobal(QtCore.QPoint(self.width() / 2, self.height() / 2)))
-
-app = QtWidgets.QApplication()
-
-gltf = pygltflib.GLTF2().load('lowpoly__fps__tdm__game__map.glb')
-renderer = Renderer(gltf)
-window = MainWindow(renderer)
-window.show()
-
-app.exec_()
