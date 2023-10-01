@@ -2,14 +2,13 @@ from PySide2 import QtGui
 from PySide2.QtCore import Qt
 
 class InputController:
-    def __init__(self, camera, light):
-        self.camera = camera
-        self.light = light
+    def __init__(self, scene):
+        self.scene = scene
 
     def update(self, keys, mouse_delta, delta_time):
         rotate_speed = 0.05
-        self.camera.orientation += rotate_speed * QtGui.QVector3D(mouse_delta.y(), mouse_delta.x(), 0)
-        self.camera.orientation.setX(min(max(self.camera.orientation.x(), -45), 45))
+        self.scene.camera.orientation += rotate_speed * QtGui.QVector3D(mouse_delta.y(), mouse_delta.x(), 0)
+        self.scene.camera.orientation.setX(min(max(self.scene.camera.orientation.x(), -45), 45))
 
         light_dirs = QtGui.QVector3D()
         light_key_map = {
@@ -27,8 +26,8 @@ class InputController:
                 light_moved = True
 
         light_velocity = 3.0
-        self.light.position += light_dirs * light_velocity * delta_time
-        self.light.need_shadow_render = light_moved
+        self.scene.light.position += light_dirs * light_velocity * delta_time
+        self.scene.light.need_shadow_render = light_moved
 
         dirs = QtGui.QVector3D()
         key_map = {
@@ -47,21 +46,21 @@ class InputController:
         accel_vector = accel * dirs
 
         matrix = QtGui.QMatrix4x4()
-        matrix.rotate(self.camera.orientation.y(), 0, 0, 1)
+        matrix.rotate(self.scene.camera.orientation.y(), 0, 0, 1)
 
         drag = 15.0
-        drag_vector = matrix.mapVector(-self.camera.velocity * drag)
+        drag_vector = matrix.mapVector(-self.scene.camera.velocity * drag)
 
         if accel_vector.x() == 0: accel_vector.setX(drag_vector.x())
         if accel_vector.y() == 0: accel_vector.setY(drag_vector.y())
         if accel_vector.z() == 0: accel_vector.setZ(drag_vector.z())
 
         matrix = QtGui.QMatrix4x4()
-        matrix.rotate(-self.camera.orientation.y(), 0, 0, 1)
+        matrix.rotate(-self.scene.camera.orientation.y(), 0, 0, 1)
 
-        self.camera.velocity += matrix.mapVector(accel_vector * delta_time)
+        self.scene.camera.velocity += matrix.mapVector(accel_vector * delta_time)
         max_velocity = 7.0
-        if self.camera.velocity.length() > max_velocity:
-            self.camera.velocity.normalize()
-            self.camera.velocity *= max_velocity
-        self.camera.position += self.camera.velocity * delta_time
+        if self.scene.camera.velocity.length() > max_velocity:
+            self.scene.camera.velocity.normalize()
+            self.scene.camera.velocity *= max_velocity
+        self.scene.camera.position += self.scene.camera.velocity * delta_time
