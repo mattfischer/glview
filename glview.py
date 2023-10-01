@@ -15,16 +15,13 @@ attribute highp vec3 normal;
 uniform mat4 projection_transform;
 uniform mat4 view_transform;
 uniform mat4 model_transform;
-uniform mat4 light_transform;
 varying vec3 frag_pos;
 varying vec3 frag_normal;
-varying vec4 pos_light_space;
 
 void main()
 {
     gl_Position = projection_transform * view_transform * model_transform * vec4(position, 1);
     frag_pos = (model_transform * vec4(position, 1)).xyz;
-    pos_light_space = light_transform * vec4(frag_pos, 1);
     frag_normal = normal;
 }
 '''
@@ -34,24 +31,24 @@ fragment_source = '''
 
 uniform vec4 color;
 uniform vec3 light_position;
-uniform sampler2DShadow shadow_texture;
+uniform samplerCubeShadow shadow_texture;
 
 varying vec3 frag_pos;
 varying vec3 frag_normal;
-varying vec4 pos_light_space;
 
-mat4 shadow_bias = mat4(vec4(.5,  0,  0,  0),
-                        vec4( 0, .5,  0,  0),
-                        vec4( 0,  0, .5,  0),
-                        vec4(.5, .5, .5,  1));
 void main()
 {
-    vec3 light_vec = light_position - frag_pos;
+    vec3 light_vec = frag_pos - light_position;
     float light_dist = length(light_vec);
-    float shade = max(dot(light_vec / light_dist, frag_normal), 0);
-    vec4 light_coord = shadow_bias * pos_light_space;
-    float shadow_bias = 0.0005 * light_coord.w / shade;
-    float shadow = textureProj(shadow_texture, light_coord - vec4(0, 0, shadow_bias, 0));
+    float shade = max(-dot(light_vec / light_dist, frag_normal), 0);
+    float light_depth = max(max(abs(light_vec.x), abs(light_vec.y)), abs(light_vec.z));
+    float far = 30;
+    float near = .1;
+    light_depth -= 0.05 / shade;
+    float depth_ref = (far + near) / (far - near) - (2 * far * near) / ((far - near) * light_depth);
+    depth_ref = (depth_ref + 1) / 2;
+
+    float shadow = texture(shadow_texture, vec4(light_vec, depth_ref));
     gl_FragColor = (shadow * shade + .25) * color;
 }
 '''
@@ -102,7 +99,7 @@ class InputController:
                 light_dirs = light_dirs + QtGui.QVector3D(*light_key_map[key])
                 light_moved = True
 
-        light_velocity = 10.0
+        light_velocity = 3.0
         self.light.position += light_dirs * light_velocity * delta_time
         self.light.need_shadow_render = light_moved
 
@@ -164,26 +161,40 @@ class Camera:
 class Light:
     def __init__(self):
         self.position = QtGui.QVector3D(8, 11, 8)
-        self.look_at = QtGui.QVector3D(0, 0, 0)
-        self.orientation = QtGui.QVector3D()
-        self.velocity = QtGui.QVector3D()
-        self.vertical_fov = 70
         self.need_shadow_render = True
 
-    def view_transform(self):
-        diff = self.look_at - self.position
-        yaw = math.atan2(-diff.x(), diff.y())
-        pitch = math.atan(diff.z() / math.sqrt(diff.x() * diff.x() + diff.y() * diff.y()))
+    def view_transform(self, face):
         transform = QtGui.QMatrix4x4()
-        transform.rotate(-math.degrees(pitch), 1, 0, 0)
-        transform.rotate(-math.degrees(yaw), 0, 0, 1)
+        transform.scale(1, -1, -1)
+        if face == GL.GL_TEXTURE_CUBE_MAP_POSITIVE_X:
+            transform.rotate(-90, 0, 1, 0)
+        elif face == GL.GL_TEXTURE_CUBE_MAP_NEGATIVE_X:
+            transform.rotate(90, 0, 1, 0)
+        elif face == GL.GL_TEXTURE_CUBE_MAP_POSITIVE_Y:
+            transform.rotate(90, 1, 0, 0)
+        elif face == GL.GL_TEXTURE_CUBE_MAP_NEGATIVE_Y:
+            transform.rotate(-90, 1, 0, 0)
+        elif face == GL.GL_TEXTURE_CUBE_MAP_POSITIVE_Z:
+            transform.rotate(180, 0, 1, 0)
+        elif face == GL.GL_TEXTURE_CUBE_MAP_NEGATIVE_Z:
+            transform.rotate(180, 0, 1, 0)
+
         transform.translate(-self.position)
         return transform
 
     def projection_transform(self):
         transform = QtGui.QMatrix4x4()
-        transform.perspective(self.vertical_fov, 1, 3, 100)
+        transform.perspective(90, 1, .1, 30)
         return transform
+
+CUBE_FACES = [
+    GL.GL_TEXTURE_CUBE_MAP_POSITIVE_X,
+    GL.GL_TEXTURE_CUBE_MAP_NEGATIVE_X,
+    GL.GL_TEXTURE_CUBE_MAP_POSITIVE_Y,
+    GL.GL_TEXTURE_CUBE_MAP_NEGATIVE_Y,
+    GL.GL_TEXTURE_CUBE_MAP_POSITIVE_Z,
+    GL.GL_TEXTURE_CUBE_MAP_NEGATIVE_Z,
+]
 
 class Renderer(QtGui.QOpenGLFunctions):
     def __init__(self, gltf):
@@ -237,18 +248,19 @@ class Renderer(QtGui.QOpenGLFunctions):
             self.buffers.append(buffer)
 
         self.shadow_texture = GL.glGenTextures(1)
-        self.glBindTexture(GL.GL_TEXTURE_2D, self.shadow_texture)
-        self.glTexImage2D(GL.GL_TEXTURE_2D, 0, GL.GL_DEPTH_COMPONENT, 1024, 1024, 0, GL.GL_DEPTH_COMPONENT, GL.GL_FLOAT, VoidPtr(0))
-        self.glTexParameteri(GL.GL_TEXTURE_2D, GL.GL_TEXTURE_MIN_FILTER, GL.GL_LINEAR)
-        self.glTexParameteri(GL.GL_TEXTURE_2D, GL.GL_TEXTURE_MAG_FILTER, GL.GL_LINEAR)
-        self.glTexParameteri(GL.GL_TEXTURE_2D, GL.GL_TEXTURE_WRAP_S, GL.GL_CLAMP_TO_EDGE)
-        self.glTexParameteri(GL.GL_TEXTURE_2D, GL.GL_TEXTURE_WRAP_T, GL.GL_CLAMP_TO_EDGE)
-        self.glTexParameteri(GL.GL_TEXTURE_2D, GL.GL_TEXTURE_COMPARE_MODE, GL.GL_COMPARE_REF_TO_TEXTURE)
-        self.glTexParameteri(GL.GL_TEXTURE_2D, GL.GL_TEXTURE_COMPARE_FUNC, GL.GL_LEQUAL)
+        self.glBindTexture(GL.GL_TEXTURE_CUBE_MAP, self.shadow_texture)
+        self.glTexParameteri(GL.GL_TEXTURE_CUBE_MAP, GL.GL_TEXTURE_MIN_FILTER, GL.GL_LINEAR)
+        self.glTexParameteri(GL.GL_TEXTURE_CUBE_MAP, GL.GL_TEXTURE_MAG_FILTER, GL.GL_LINEAR)
+        self.glTexParameteri(GL.GL_TEXTURE_CUBE_MAP, GL.GL_TEXTURE_WRAP_S, GL.GL_CLAMP_TO_EDGE)
+        self.glTexParameteri(GL.GL_TEXTURE_CUBE_MAP, GL.GL_TEXTURE_WRAP_T, GL.GL_CLAMP_TO_EDGE)
+        self.glTexParameteri(GL.GL_TEXTURE_CUBE_MAP, GL.GL_TEXTURE_COMPARE_MODE, GL.GL_COMPARE_REF_TO_TEXTURE)
+        self.glTexParameteri(GL.GL_TEXTURE_CUBE_MAP, GL.GL_TEXTURE_COMPARE_FUNC, GL.GL_LEQUAL)
+
+        for face in CUBE_FACES:
+            self.glTexImage2D(face, 0, GL.GL_DEPTH_COMPONENT, 1024, 1024, 0, GL.GL_DEPTH_COMPONENT, GL.GL_FLOAT, VoidPtr(0))
 
         self.shadow_fbo = GL.glGenFramebuffers(1)
         self.glBindFramebuffer(GL.GL_FRAMEBUFFER, self.shadow_fbo)
-        self.glFramebufferTexture2D(GL.GL_FRAMEBUFFER, GL.GL_DEPTH_ATTACHMENT, GL.GL_TEXTURE_2D, self.shadow_texture, 0)
         GL.glDrawBuffer(GL.GL_NONE)
         self.glBindFramebuffer(GL.GL_FRAMEBUFFER, 0)
 
@@ -295,25 +307,27 @@ class Renderer(QtGui.QOpenGLFunctions):
     def render(self, width, height):
         if self.light.need_shadow_render:
             self.glBindFramebuffer(GL.GL_FRAMEBUFFER, self.shadow_fbo)
-            self.glViewport(0, 0, 1024, 1024)
-            self.glClear(GL.GL_DEPTH_BUFFER_BIT)
             self.shadow_program.bind()
-
-            projection_transform = self.light.projection_transform()
-            projection_transform.rotate(-90, 1, 0, 0)
-            view_transform = self.light.view_transform()
-            
-            self.shadow_program.setUniformValue('projection_transform', projection_transform)
-            self.shadow_program.setUniformValue('view_transform', view_transform)
-
-            model_transform = QtGui.QMatrix4x4()
+            self.glViewport(0, 0, 1024, 1024)
 
             self.shadow_program.enableAttributeArray('position')
             self.shadow_program.enableAttributeArray('normal')
+
+            for face in CUBE_FACES:
+                self.glFramebufferTexture2D(GL.GL_FRAMEBUFFER, GL.GL_DEPTH_ATTACHMENT, face, self.shadow_texture, 0)
             
-            scene = self.gltf.scenes[self.gltf.scene]
-            for node in scene.nodes:
-                self.draw_node(self.gltf.nodes[node], model_transform, self.shadow_program)
+                self.glClear(GL.GL_DEPTH_BUFFER_BIT)
+
+                projection_transform = self.light.projection_transform()
+                view_transform = self.light.view_transform(face)
+                
+                self.shadow_program.setUniformValue('projection_transform', projection_transform)
+                self.shadow_program.setUniformValue('view_transform', view_transform)
+
+                model_transform = QtGui.QMatrix4x4()
+                scene = self.gltf.scenes[self.gltf.scene]
+                for node in scene.nodes:
+                    self.draw_node(self.gltf.nodes[node], model_transform, self.shadow_program)
 
             self.shadow_program.disableAttributeArray('position')
             self.shadow_program.disableAttributeArray('normal')
@@ -336,14 +350,10 @@ class Renderer(QtGui.QOpenGLFunctions):
         self.program.setUniformValue('projection_transform', projection_transform)
         self.program.setUniformValue('view_transform', view_transform)
         self.program.setUniformValue('light_position', self.light.position)
-        light_projection_transform = self.light.projection_transform()
-        light_projection_transform.rotate(-90, 1, 0, 0)
-        light_view_transform = self.light.view_transform()
-        self.program.setUniformValue('light_transform', light_projection_transform * light_view_transform)
         self.program.setUniformValue('shadow_texture', 0)
         
         self.glActiveTexture(GL.GL_TEXTURE0)
-        self.glBindTexture(GL.GL_TEXTURE_2D, self.shadow_texture)
+        self.glBindTexture(GL.GL_TEXTURE_CUBE_MAP, self.shadow_texture)
 
         model_transform = QtGui.QMatrix4x4()
 
