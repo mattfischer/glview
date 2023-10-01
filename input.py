@@ -1,5 +1,4 @@
-from PySide2 import QtCore, QtWidgets, QtGui
-from PySide2.QtCore import Slot
+from PySide2 import QtGui
 from PySide2.QtCore import Qt
 
 class InputController:

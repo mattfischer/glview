@@ -1,10 +1,7 @@
-from PySide2 import QtCore, QtWidgets, QtGui
-from PySide2.QtCore import Slot
-from PySide2.QtCore import Qt
+from PySide2 import QtGui
 from PySide2.support import VoidPtr
 
 from OpenGL import GL
-import numpy as np
 import pygltflib
 
 CUBE_FACES = [
@@ -64,11 +61,16 @@ class Light:
         transform.perspective(90, 1, .1, 30)
         return transform
 
-class MeshRenderer:
-    def __init__(self, gltf):
+class GltfRenderer:
+    def __init__(self, filename):
+        gltf = pygltflib.GLTF2().load(filename)
         self.gltf = gltf
 
-    def init_gl(self, gl):
+    def init_gl(self, gl, shader_cache):
+        self.program = shader_cache.get_shader('main')
+        self.program.enableAttributeArray('position')
+        self.program.enableAttributeArray('normal')
+
         buffer = self.gltf.buffers[0]
         data = self.gltf.get_data_from_buffer_uri(buffer.uri)
         data = memoryview(data)
@@ -134,7 +136,11 @@ class ShadowRenderer:
     def __init__(self, light):
         self.light = light
 
-    def init_gl(self, gl):
+    def init_gl(self, gl, shader_cache):
+        self.shadow_program = shader_cache.get_shader('shadow')
+        self.shadow_program.enableAttributeArray('position')
+        self.shadow_program.enableAttributeArray('normal')
+
         self.shadow_texture = GL.glGenTextures(1)
         gl.glBindTexture(GL.GL_TEXTURE_CUBE_MAP, self.shadow_texture)
         gl.glTexParameteri(GL.GL_TEXTURE_CUBE_MAP, GL.GL_TEXTURE_MIN_FILTER, GL.GL_LINEAR)
@@ -152,12 +158,12 @@ class ShadowRenderer:
         GL.glDrawBuffer(GL.GL_NONE)
         gl.glBindFramebuffer(GL.GL_FRAMEBUFFER, 0)
 
-    def render(self, gl, mesh_renderer, shadow_program):
+    def render(self, gl, mesh_renderer):
         if not self.light.need_shadow_render:
             return
 
         gl.glBindFramebuffer(GL.GL_FRAMEBUFFER, self.shadow_fbo)
-        shadow_program.bind()
+        self.shadow_program.bind()
         gl.glViewport(0, 0, 1024, 1024)
 
         for face in CUBE_FACES:
@@ -168,81 +174,76 @@ class ShadowRenderer:
             projection_transform = self.light.projection_transform()
             view_transform = self.light.view_transform(face)
             
-            shadow_program.setUniformValue('projection_transform', projection_transform)
-            shadow_program.setUniformValue('view_transform', view_transform)
+            self.shadow_program.setUniformValue('projection_transform', projection_transform)
+            self.shadow_program.setUniformValue('view_transform', view_transform)
 
-            mesh_renderer.render(gl, shadow_program)
+            mesh_renderer.render(gl, self.shadow_program)
         
-        shadow_program.release()
+        self.shadow_program.release()
 
         gl.glBindFramebuffer(GL.GL_FRAMEBUFFER, 0)
         self.light.need_shadow_render = False
 
-class Renderer(QtGui.QOpenGLFunctions):
-    def __init__(self, gltf):
+class ShaderCache:
+    def __init__(self):
+        self.cache = {}
+
+    def get_shader(self, name):
+        if name not in self.cache:
+            program = QtGui.QOpenGLShaderProgram()
+        
+            vertex_shader = QtGui.QOpenGLShader(QtGui.QOpenGLShader.Vertex)
+            vertex_shader.compileSourceFile('shaders/%s.vert' % name)
+            program.addShader(vertex_shader)
+
+            fragment_shader = QtGui.QOpenGLShader(QtGui.QOpenGLShader.Fragment)
+            fragment_shader.compileSourceFile('shaders/%s.frag' % name)
+            program.addShader(fragment_shader)
+            program.link()
+            self.cache[name] = program
+
+        return self.cache[name]
+
+class Renderer:
+    def __init__(self, gltf_filename):
         super(Renderer, self).__init__()
         self.camera = Camera()
         self.light = Light()
-        self.mesh_renderer = MeshRenderer(gltf)
+        self.shader_cache = ShaderCache()
+        self.mesh_renderer = GltfRenderer(gltf_filename)
         self.shadow_renderer = ShadowRenderer(self.light)
 
-    def init_scene(self):
-        self.initializeOpenGLFunctions()
+    def init_gl(self, gl):
+        gl.glEnable(GL.GL_DEPTH_TEST)
+        gl.glEnable(GL.GL_CULL_FACE)
+        gl.glClearColor(.2, .2, .2, 1)
 
-        self.glEnable(GL.GL_DEPTH_TEST)
-        self.glEnable(GL.GL_CULL_FACE)
-        self.glClearColor(.2, .2, .2, 1)
+        self.mesh_renderer.init_gl(gl, self.shader_cache)
+        self.shadow_renderer.init_gl(gl, self.shader_cache)
 
-        self.program = QtGui.QOpenGLShaderProgram()
-        
-        vertex_shader = QtGui.QOpenGLShader(QtGui.QOpenGLShader.Vertex)
-        vertex_shader.compileSourceFile('shaders/main.vert')
-        self.program.addShader(vertex_shader)
+    def render(self, gl, width, height):
+        self.shadow_renderer.render(gl, self.mesh_renderer)
 
-        fragment_shader = QtGui.QOpenGLShader(QtGui.QOpenGLShader.Fragment)
-        fragment_shader.compileSourceFile('shaders/main.frag')
-        self.program.addShader(fragment_shader)
-        self.program.link()
-        self.program.enableAttributeArray('position')
-        self.program.enableAttributeArray('normal')
+        gl.glClear(GL.GL_COLOR_BUFFER_BIT)
+        gl.glClear(GL.GL_DEPTH_BUFFER_BIT)
+        gl.glViewport(0, 0, width, height)
 
-        self.shadow_program = QtGui.QOpenGLShaderProgram()
-        
-        shadow_vertex_shader = QtGui.QOpenGLShader(QtGui.QOpenGLShader.Vertex)
-        shadow_vertex_shader.compileSourceFile('shaders/shadow.vert')
-        self.shadow_program.addShader(shadow_vertex_shader)
-
-        shadow_fragment_shader = QtGui.QOpenGLShader(QtGui.QOpenGLShader.Fragment)
-        shadow_fragment_shader.compileSourceFile('shaders/shadow.frag')
-        self.shadow_program.addShader(shadow_fragment_shader)
-        self.shadow_program.link()
-        self.shadow_program.enableAttributeArray('position')
-        self.shadow_program.enableAttributeArray('normal')
-
-        self.mesh_renderer.init_gl(self)
-        self.shadow_renderer.init_gl(self)
-
-    def render(self, width, height):
-        self.shadow_renderer.render(self, self.mesh_renderer, self.shadow_program)
-
-        self.glClear(GL.GL_COLOR_BUFFER_BIT)
-        self.glClear(GL.GL_DEPTH_BUFFER_BIT)
-        self.glViewport(0, 0, width, height)
-        self.program.bind()
+        program = self.mesh_renderer.program
+        program.bind()
 
         projection_transform = self.camera.projection_transform(float(width) / float(height))
         projection_transform.rotate(-90, 1, 0, 0)
 
         view_transform = self.camera.view_transform()
         
-        self.program.setUniformValue('projection_transform', projection_transform)
-        self.program.setUniformValue('view_transform', view_transform)
-        self.program.setUniformValue('light_position', self.light.position)
-        self.program.setUniformValue('shadow_texture', 0)
+        program.setUniformValue('projection_transform', projection_transform)
+        program.setUniformValue('view_transform', view_transform)
+        program.setUniformValue('light_position', self.light.position)
+        program.setUniformValue('shadow_texture', 0)
         
-        self.glActiveTexture(GL.GL_TEXTURE0)
-        self.glBindTexture(GL.GL_TEXTURE_CUBE_MAP, self.shadow_renderer.shadow_texture)
+        gl.glActiveTexture(GL.GL_TEXTURE0)
+        gl.glBindTexture(GL.GL_TEXTURE_CUBE_MAP, self.shadow_renderer.shadow_texture)
 
-        self.mesh_renderer.render(self, self.program)
+        self.mesh_renderer.render(gl, program)
         
-        self.program.release()
+        program.release()

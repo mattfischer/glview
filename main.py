@@ -2,12 +2,6 @@ from PySide2 import QtCore, QtWidgets, QtGui
 from PySide2.QtCore import Slot
 from PySide2.QtCore import Qt
 
-from OpenGL import GL
-import numpy as np
-import pygltflib
-from PySide2.support import VoidPtr
-import math
-
 from render import Renderer
 from input import InputController
 
@@ -15,12 +9,14 @@ class GLWidget(QtWidgets.QOpenGLWidget):
     def __init__(self, renderer, parent=None):
         super(GLWidget, self).__init__(parent)
         self.renderer = renderer
+        self.gl = QtGui.QOpenGLFunctions()
 
     def initializeGL(self):
-        self.renderer.init_scene()
+        self.gl.initializeOpenGLFunctions()
+        self.renderer.init_gl(self.gl)
 
     def paintGL(self):
-        self.renderer.render(self.width(), self.height())
+        self.renderer.render(self.gl, self.width(), self.height())
 
 class MainWindow(QtWidgets.QMainWindow):
     def __init__(self, renderer, parent=None):
@@ -77,8 +73,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
 app = QtWidgets.QApplication()
 
-gltf = pygltflib.GLTF2().load('lowpoly__fps__tdm__game__map.glb')
-renderer = Renderer(gltf)
+renderer = Renderer('lowpoly__fps__tdm__game__map.glb')
 window = MainWindow(renderer)
 window.show()
 
