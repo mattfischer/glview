@@ -8,72 +8,6 @@ import pygltflib
 from PySide2.support import VoidPtr
 import math
 
-vertex_source = '''
-#version 130
-attribute highp vec3 position;
-attribute highp vec3 normal;
-uniform mat4 projection_transform;
-uniform mat4 view_transform;
-uniform mat4 model_transform;
-varying vec3 frag_pos;
-varying vec3 frag_normal;
-
-void main()
-{
-    gl_Position = projection_transform * view_transform * model_transform * vec4(position, 1);
-    frag_pos = (model_transform * vec4(position, 1)).xyz;
-    frag_normal = normal;
-}
-'''
-
-fragment_source = '''
-#version 130
-
-uniform vec4 color;
-uniform vec3 light_position;
-uniform samplerCubeShadow shadow_texture;
-
-varying vec3 frag_pos;
-varying vec3 frag_normal;
-
-void main()
-{
-    vec3 light_vec = frag_pos - light_position;
-    float light_dist = length(light_vec);
-    float shade = max(-dot(light_vec / light_dist, frag_normal), 0);
-    float light_depth = max(max(abs(light_vec.x), abs(light_vec.y)), abs(light_vec.z));
-    float far = 30;
-    float near = .1;
-    light_depth -= 0.05 / shade;
-    float depth_ref = (far + near) / (far - near) - (2 * far * near) / ((far - near) * light_depth);
-    depth_ref = (depth_ref + 1) / 2;
-
-    float shadow = texture(shadow_texture, vec4(light_vec, depth_ref));
-    gl_FragColor = (shadow * shade + .25) * color;
-}
-'''
-
-shadow_vertex_source = '''
-#version 130
-attribute highp vec3 position;
-uniform mat4 projection_transform;
-uniform mat4 view_transform;
-uniform mat4 model_transform;
-
-void main()
-{
-    gl_Position = projection_transform * view_transform * model_transform * vec4(position, 1);
-}
-'''
-
-shadow_fragment_source = '''
-#version 130
-
-void main()
-{
-}
-'''
-
 class InputController:
     def __init__(self, camera, light):
         self.camera = camera
@@ -213,22 +147,22 @@ class Renderer(QtGui.QOpenGLFunctions):
         self.program = QtGui.QOpenGLShaderProgram()
         
         vertex_shader = QtGui.QOpenGLShader(QtGui.QOpenGLShader.Vertex)
-        vertex_shader.compileSourceCode(vertex_source)
+        vertex_shader.compileSourceFile('shaders/main.vert')
         self.program.addShader(vertex_shader)
 
         fragment_shader = QtGui.QOpenGLShader(QtGui.QOpenGLShader.Fragment)
-        fragment_shader.compileSourceCode(fragment_source)
+        fragment_shader.compileSourceFile('shaders/main.frag')
         self.program.addShader(fragment_shader)
         self.program.link()
 
         self.shadow_program = QtGui.QOpenGLShaderProgram()
         
         shadow_vertex_shader = QtGui.QOpenGLShader(QtGui.QOpenGLShader.Vertex)
-        shadow_vertex_shader.compileSourceCode(shadow_vertex_source)
+        shadow_vertex_shader.compileSourceFile('shaders/shadow.vert')
         self.shadow_program.addShader(shadow_vertex_shader)
 
         shadow_fragment_shader = QtGui.QOpenGLShader(QtGui.QOpenGLShader.Fragment)
-        shadow_fragment_shader.compileSourceCode(shadow_fragment_source)
+        shadow_fragment_shader.compileSourceFile('shaders/shadow.frag')
         self.shadow_program.addShader(shadow_fragment_shader)
         self.shadow_program.link()
 
