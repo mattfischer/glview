@@ -74,9 +74,11 @@ class MainWindow(QtWidgets.QMainWindow):
 
 app = QtWidgets.QApplication()
 
+# https://sketchfab.com/3d-models/lowpoly-fps-tdm-game-map-d41a19f699ea421a9aa32b407cb7537b
+gltf_object = GltfObject('lowpoly__fps__tdm__game__map.glb')
+
 camera = Camera(QtGui.QVector3D(0, 0, .5), 50)
 light = Light(QtGui.QVector3D(8, 11, 8))
-gltf_object = GltfObject('lowpoly__fps__tdm__game__map.glb')
 scene = Scene([gltf_object], camera, light)
 
 renderer = Renderer(scene)
