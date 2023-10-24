@@ -247,9 +247,15 @@ class Renderer:
         
         gl.glDisable(GL.GL_DEPTH_TEST)
         self.postproc_program.bind()
+        gl.glActiveTexture(GL.GL_TEXTURE0)
         gl.glBindTexture(GL.GL_TEXTURE_2D, self.render_color_texture)
-        self.postproc_program.setUniformValue('frame', 0)
 
+        gl.glActiveTexture(GL.GL_TEXTURE1)
+        gl.glBindTexture(GL.GL_TEXTURE_2D, self.render_depth_texture)
+
+        gl.glUniform1i(0, 0)
+        gl.glUniform1i(1, 1)
+        
         gl.glDrawArrays(GL.GL_TRIANGLE_FAN, 0, 4)
         self.postproc_program.release()
         gl.glEnable(GL.GL_DEPTH_TEST)
