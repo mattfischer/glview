@@ -179,7 +179,7 @@ class Renderer:
         self.scene.light.renderer = ShadowRenderer(self.scene.light)
         self.shader_cache = ShaderCache()
 
-    def init_gl(self, gl: QtGui.QOpenGLFunctions):
+    def init_gl(self, gl: QtGui.QOpenGLFunctions, width: int, height: int):
         gl.glEnable(GL.GL_DEPTH_TEST)
         gl.glEnable(GL.GL_CULL_FACE)
         gl.glClearColor(.2, .2, .2, 1)
@@ -188,9 +188,35 @@ class Renderer:
             obj.renderer.init_gl(gl, self.shader_cache)
         self.scene.light.renderer.init_gl(gl, self.shader_cache)
 
+        self.render_color_texture = GL.glGenTextures(1)
+        gl.glBindTexture(GL.GL_TEXTURE_2D, self.render_color_texture)
+        gl.glTexParameteri(GL.GL_TEXTURE_2D, GL.GL_TEXTURE_MIN_FILTER, GL.GL_LINEAR)
+        gl.glTexParameteri(GL.GL_TEXTURE_2D, GL.GL_TEXTURE_MAG_FILTER, GL.GL_LINEAR)
+        gl.glTexParameteri(GL.GL_TEXTURE_2D, GL.GL_TEXTURE_WRAP_S, GL.GL_CLAMP_TO_EDGE)
+        gl.glTexParameteri(GL.GL_TEXTURE_2D, GL.GL_TEXTURE_WRAP_T, GL.GL_CLAMP_TO_EDGE)
+        gl.glTexImage2D(GL.GL_TEXTURE_2D, 0, GL.GL_RGB, width, height, 0, GL.GL_RGB, GL.GL_UNSIGNED_BYTE, VoidPtr(0))
+
+        self.render_depth_texture = GL.glGenTextures(1)
+        gl.glBindTexture(GL.GL_TEXTURE_2D, self.render_depth_texture)
+        gl.glTexParameteri(GL.GL_TEXTURE_2D, GL.GL_TEXTURE_MIN_FILTER, GL.GL_LINEAR)
+        gl.glTexParameteri(GL.GL_TEXTURE_2D, GL.GL_TEXTURE_MAG_FILTER, GL.GL_LINEAR)
+        gl.glTexParameteri(GL.GL_TEXTURE_2D, GL.GL_TEXTURE_WRAP_S, GL.GL_CLAMP_TO_EDGE)
+        gl.glTexParameteri(GL.GL_TEXTURE_2D, GL.GL_TEXTURE_WRAP_T, GL.GL_CLAMP_TO_EDGE)
+        gl.glTexImage2D(GL.GL_TEXTURE_2D, 0, GL.GL_DEPTH_COMPONENT, width, height, 0, GL.GL_DEPTH_COMPONENT, GL.GL_FLOAT, VoidPtr(0))
+
+        self.render_fbo = GL.glGenFramebuffers(1)
+        gl.glBindFramebuffer(GL.GL_FRAMEBUFFER, self.render_fbo)
+        gl.glFramebufferTexture2D(GL.GL_FRAMEBUFFER, GL.GL_COLOR_ATTACHMENT0, GL.GL_TEXTURE_2D, self.render_color_texture, 0)
+        gl.glFramebufferTexture2D(GL.GL_FRAMEBUFFER, GL.GL_DEPTH_ATTACHMENT, GL.GL_TEXTURE_2D, self.render_depth_texture, 0)
+        gl.glBindFramebuffer(GL.GL_FRAMEBUFFER, 0)
+
+        self.postproc_program = self.shader_cache.get_shader('postproc')
+
     def render(self, gl: QtGui.QOpenGLFunctions, width: int, height: int):
         self.scene.light.renderer.render(gl, self.scene)
 
+        gl.glBindFramebuffer(GL.GL_FRAMEBUFFER, self.render_fbo)
+        
         gl.glClear(GL.GL_COLOR_BUFFER_BIT)
         gl.glClear(GL.GL_DEPTH_BUFFER_BIT)
         gl.glViewport(0, 0, width, height)
@@ -215,3 +241,15 @@ class Renderer:
             obj.renderer.render(gl, program)
             
             program.release()
+        
+        gl.glBindFramebuffer(GL.GL_FRAMEBUFFER, 0)
+        gl.glViewport(0, 0, width, height)
+        
+        gl.glDisable(GL.GL_DEPTH_TEST)
+        self.postproc_program.bind()
+        gl.glBindTexture(GL.GL_TEXTURE_2D, self.render_color_texture)
+        self.postproc_program.setUniformValue('frame', 0)
+
+        gl.glDrawArrays(GL.GL_TRIANGLE_FAN, 0, 4)
+        self.postproc_program.release()
+        gl.glEnable(GL.GL_DEPTH_TEST)

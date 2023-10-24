@@ -14,7 +14,7 @@ class GLWidget(QtWidgets.QOpenGLWidget):
 
     def initializeGL(self):
         self.gl.initializeOpenGLFunctions()
-        self.renderer.init_gl(self.gl)
+        self.renderer.init_gl(self.gl, self.width(), self.height())
 
     def paintGL(self):
         self.renderer.render(self.gl, self.width(), self.height())
