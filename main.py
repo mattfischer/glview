@@ -10,14 +10,12 @@ class GLWidget(QtWidgets.QOpenGLWidget):
     def __init__(self, renderer: Renderer, parent: QtWidgets.QWidget = None):
         super(GLWidget, self).__init__(parent)
         self.renderer = renderer
-        self.gl = QtGui.QOpenGLFunctions()
 
     def initializeGL(self):
-        self.gl.initializeOpenGLFunctions()
-        self.renderer.init_gl(self.gl, self.width(), self.height())
+        self.renderer.init_gl(self.width(), self.height())
 
     def paintGL(self):
-        self.renderer.render(self.gl, self.width(), self.height())
+        self.renderer.render(self.width(), self.height())
 
 class MainWindow(QtWidgets.QMainWindow):
     def __init__(self, renderer: Renderer, parent: QtWidgets.QWidget = None):
