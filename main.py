@@ -6,16 +6,31 @@ from render import Renderer
 from objects import Camera, Light, GltfObject, Scene
 from input import InputController
 
+import glm
+import time
+
 class GLWidget(QtWidgets.QOpenGLWidget):
     def __init__(self, renderer: Renderer, parent: QtWidgets.QWidget = None):
         super(GLWidget, self).__init__(parent)
         self.renderer = renderer
+        self.last_time = time.time()
+        self.render_time = 0
+        self.render_frames = 0
 
     def initializeGL(self):
         self.renderer.init_gl(self.width(), self.height())
 
     def paintGL(self):
+        start = time.time()
         self.renderer.render(self.width(), self.height())
+        end = time.time()
+        self.render_time += (end - start)
+        self.render_frames += 1
+        if end > self.last_time + 1:
+            print('Average render time: %ims' % (self.render_time * 1000 / self.render_frames))
+            self.render_time = 0
+            self.render_frames = 0
+            self.last_time = end
 
 class MainWindow(QtWidgets.QMainWindow):
     def __init__(self, renderer: Renderer, parent: QtWidgets.QWidget = None):
@@ -75,8 +90,8 @@ app = QtWidgets.QApplication()
 # https://sketchfab.com/3d-models/lowpoly-fps-tdm-game-map-d41a19f699ea421a9aa32b407cb7537b
 gltf_object = GltfObject('lowpoly__fps__tdm__game__map.glb')
 
-camera = Camera(QtGui.QVector3D(0, 0, .5), 50)
-light = Light(QtGui.QVector3D(8, 11, 8))
+camera = Camera(glm.vec3(0, 0, .5), 50)
+light = Light(glm.vec3(8, 11, 8))
 scene = Scene([gltf_object], camera, light)
 
 renderer = Renderer(scene)

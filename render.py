@@ -1,12 +1,11 @@
-from PySide2 import QtGui
-from PySide2.support import VoidPtr
-
 from OpenGL import GL
 import pygltflib
 
 from objects import GltfObject, Light, Scene
 import numpy as np
 import ctypes
+import glm
+import math
 
 CUBE_FACES = [
     GL.GL_TEXTURE_CUBE_MAP_POSITIVE_X,
@@ -37,7 +36,7 @@ class ShaderCache:
     def __init__(self):
         self.cache = {}
 
-    def get_shader(self, name: str) -> GL.GLuint:
+    def get_shader(self, name: str) -> Shader:
         if name not in self.cache:
             program = GL.glCreateProgram()
             with open('shaders/%s.vert' % name) as file:
@@ -83,13 +82,13 @@ class GltfRenderer:
             GL.glBindBuffer(target, 0)
             self.buffers.append(buffer)
 
-    def draw_mesh(self, mesh: pygltflib.Mesh, model_transform: QtGui.QMatrix4x4, program: Shader):
-        GL.glUniformMatrix4fv(program.uniform_location('model_transform'), 1, False, model_transform.data())
+    def draw_mesh(self, mesh: pygltflib.Mesh, model_transform: glm.mat4, program: Shader):
+        GL.glUniformMatrix4fv(program.uniform_location('model_transform'), 1, False, glm.value_ptr(model_transform))
 
         for primitive in mesh.primitives:
             material = self.gltf_object.gltf.materials[primitive.material]
             c = material.pbrMetallicRoughness.baseColorFactor
-            GL.glUniform4f(program.uniform_location('color'), c[0], c[1], c[2], c[3])
+            GL.glUniform4fv(program.uniform_location('color'), 1, c)
 
             accessor = self.gltf_object.gltf.accessors[primitive.attributes.POSITION]
             buffer = self.buffers[accessor.bufferView]
@@ -108,7 +107,7 @@ class GltfRenderer:
             GL.glBindBuffer(GL.GL_ELEMENT_ARRAY_BUFFER, buffer)
             GL.glDrawElements(GL.GL_TRIANGLES, accessor.count, GL.GL_UNSIGNED_INT, ctypes.c_void_p(accessor.byteOffset))
 
-    def draw_node(self, node: pygltflib.Node, model_transform: QtGui.QMatrix4x4, program: Shader):
+    def draw_node(self, node: pygltflib.Node, model_transform: glm.mat4, program: Shader):
         if node.mesh:
             self.draw_mesh(self.gltf_object.gltf.meshes[node.mesh], model_transform, program)
         
@@ -116,12 +115,12 @@ class GltfRenderer:
             child_node = self.gltf_object.gltf.nodes[n]
             matrix = model_transform
             if child_node.matrix:
-                matrix = QtGui.QMatrix4x4(*child_node.matrix).transposed() * matrix
+                matrix = glm.mat4(*child_node.matrix) * matrix
             
             self.draw_node(child_node, matrix, program)
 
     def render(self, program: Shader):
-        model_transform = QtGui.QMatrix4x4()
+        model_transform = glm.mat4()
         scene = self.gltf_object.gltf.scenes[self.gltf_object.gltf.scene]
         for node in scene.nodes:
             self.draw_node(self.gltf_object.gltf.nodes[node], model_transform, program)
@@ -164,24 +163,23 @@ class ShadowRenderer:
         
             GL.glClear(GL.GL_DEPTH_BUFFER_BIT)
 
-            projection_transform = QtGui.QMatrix4x4()
-            projection_transform.perspective(90, 1, .1, 30)
+            projection_transform = glm.perspective(math.radians(90), 1, .1, 30)
 
-            view_transform = QtGui.QMatrix4x4()
-            view_transform.scale(1, -1, -1)
+            view_transform = glm.mat4()
+            view_transform = view_transform * glm.scale(glm.vec3(1, -1, -1))
             face_transforms = {
-                GL.GL_TEXTURE_CUBE_MAP_POSITIVE_X: (-90, 0, 1, 0),
-                GL.GL_TEXTURE_CUBE_MAP_NEGATIVE_X: (90, 0, 1, 0),
-                GL.GL_TEXTURE_CUBE_MAP_POSITIVE_Y: (90, 1, 0, 0),
-                GL.GL_TEXTURE_CUBE_MAP_NEGATIVE_Y: (-90, 1, 0, 0),
-                GL.GL_TEXTURE_CUBE_MAP_POSITIVE_Z: (0, 0, 1, 0),
-                GL.GL_TEXTURE_CUBE_MAP_NEGATIVE_Z: (180, 0, 1, 0)
+                GL.GL_TEXTURE_CUBE_MAP_POSITIVE_X: (math.radians(-90), glm.vec3(0, 1, 0)),
+                GL.GL_TEXTURE_CUBE_MAP_NEGATIVE_X: (math.radians(90), glm.vec3(0, 1, 0)),
+                GL.GL_TEXTURE_CUBE_MAP_POSITIVE_Y: (math.radians(90), glm.vec3(1, 0, 0)),
+                GL.GL_TEXTURE_CUBE_MAP_NEGATIVE_Y: (math.radians(-90), glm.vec3(1, 0, 0)),
+                GL.GL_TEXTURE_CUBE_MAP_POSITIVE_Z: (math.radians(0), glm.vec3(0, 1, 0)),
+                GL.GL_TEXTURE_CUBE_MAP_NEGATIVE_Z: (math.radians(180), glm.vec3(0, 1, 0))
             }
-            view_transform.rotate(*face_transforms[face])
-            view_transform.translate(-self.light.position)
+            view_transform = view_transform * glm.rotate(*face_transforms[face])
+            view_transform = view_transform * glm.translate(-self.light.position)
             
-            GL.glUniformMatrix4fv(self.shadow_program.uniform_location('projection_transform'), 1, False, projection_transform.data())
-            GL.glUniformMatrix4fv(self.shadow_program.uniform_location('view_transform'), 1, False, view_transform.data())
+            GL.glUniformMatrix4fv(self.shadow_program.uniform_location('projection_transform'), 1, False, glm.value_ptr(projection_transform))
+            GL.glUniformMatrix4fv(self.shadow_program.uniform_location('view_transform'), 1, False, glm.value_ptr(view_transform))
 
             for obj in scene.objects:
                 obj.renderer.render(self.shadow_program)
@@ -189,7 +187,6 @@ class ShadowRenderer:
         GL.glUseProgram(0)
         GL.glDisableVertexAttribArray(self.shadow_program.attribute_location('position'))
 
-        GL.glBindFramebuffer(GL.GL_FRAMEBUFFER, 0)
         self.light.need_shadow_render = False
 
 class Renderer:
@@ -253,13 +250,12 @@ class Renderer:
             GL.glEnableVertexAttribArray(program.attribute_location('normal'))
 
             projection_transform = self.scene.camera.projection_transform(float(width) / float(height))
-            projection_transform.rotate(-90, 1, 0, 0)
-
+            projection_transform = projection_transform * glm.rotate(math.radians(-90), glm.vec3(1, 0, 0))
             view_transform = self.scene.camera.view_transform()
             
-            GL.glUniformMatrix4fv(program.uniform_location('projection_transform'), 1, GL.GL_FALSE, projection_transform.data())
-            GL.glUniformMatrix4fv(program.uniform_location('view_transform'), 1, GL.GL_FALSE, view_transform.data())
-            GL.glUniform3f(program.uniform_location('light_position'), self.scene.light.position.x(), self.scene.light.position.y(), self.scene.light.position.z())
+            GL.glUniformMatrix4fv(program.uniform_location('projection_transform'), 1, GL.GL_FALSE, glm.value_ptr(projection_transform))
+            GL.glUniformMatrix4fv(program.uniform_location('view_transform'), 1, GL.GL_FALSE, glm.value_ptr(view_transform))
+            GL.glUniform3fv(program.uniform_location('light_position'), 1, glm.value_ptr(self.scene.light.position))
             GL.glUniform1i(program.uniform_location('shadow_texture'), 0)
 
             GL.glActiveTexture(GL.GL_TEXTURE0)
