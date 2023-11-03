@@ -75,32 +75,35 @@ class GltfRenderer:
                 pygltflib.ARRAY_BUFFER : GL.GL_ARRAY_BUFFER,
                 pygltflib.ELEMENT_ARRAY_BUFFER : GL.GL_ELEMENT_ARRAY_BUFFER
             }
-            target = buffer_types[view.target]
-            GL.glBindBuffer(target, buffer)
-            m = data[view.byteOffset:view.byteOffset + view.byteLength]
-            GL.glBufferData(target, view.byteLength, np.array(m), GL.GL_STATIC_DRAW)
-            GL.glBindBuffer(target, 0)
+            if view.target:
+                target = buffer_types[view.target]
+                GL.glBindBuffer(target, buffer)
+                m = data[view.byteOffset:view.byteOffset + view.byteLength]
+                GL.glBufferData(target, view.byteLength, np.array(m), GL.GL_STATIC_DRAW)
+                GL.glBindBuffer(target, 0)
             self.buffers.append(buffer)
 
     def draw_mesh(self, mesh: pygltflib.Mesh, model_transform: glm.mat4, program: Shader):
         GL.glUniformMatrix4fv(program.uniform_location('model_transform'), 1, False, glm.value_ptr(model_transform))
 
         for primitive in mesh.primitives:
-            material = self.gltf_object.gltf.materials[primitive.material]
-            c = material.pbrMetallicRoughness.baseColorFactor
-            GL.glUniform4fv(program.uniform_location('color'), 1, c)
+            location = program.uniform_location('color')
+            if location != -1:
+                material = self.gltf_object.gltf.materials[primitive.material]
+                color = material.pbrMetallicRoughness.baseColorFactor
+                GL.glUniform4fv(location, 1, color)
 
             accessor = self.gltf_object.gltf.accessors[primitive.attributes.POSITION]
             buffer = self.buffers[accessor.bufferView]
             GL.glBindBuffer(GL.GL_ARRAY_BUFFER, buffer)
             GL.glVertexAttribPointer(program.attribute_location('position'), 3, GL.GL_FLOAT, GL.GL_FALSE, 0, ctypes.c_void_p(accessor.byteOffset))
         
-            accessor = self.gltf_object.gltf.accessors[primitive.attributes.NORMAL]
-            buffer = self.buffers[accessor.bufferView]
-            GL.glBindBuffer(GL.GL_ARRAY_BUFFER, buffer)
-            l = program.attribute_location('normal')
-            if l != -1:
-                GL.glVertexAttribPointer(l, 3, GL.GL_FLOAT, GL.GL_FALSE, 0, ctypes.c_void_p(accessor.byteOffset))
+            location = program.attribute_location('normal')
+            if location != -1:    
+                accessor = self.gltf_object.gltf.accessors[primitive.attributes.NORMAL]
+                buffer = self.buffers[accessor.bufferView]
+                GL.glBindBuffer(GL.GL_ARRAY_BUFFER, buffer)
+                GL.glVertexAttribPointer(location, 3, GL.GL_FLOAT, GL.GL_FALSE, 0, ctypes.c_void_p(accessor.byteOffset))
         
             accessor = self.gltf_object.gltf.accessors[primitive.indices]
             buffer = self.buffers[accessor.bufferView]
@@ -108,19 +111,19 @@ class GltfRenderer:
             GL.glDrawElements(GL.GL_TRIANGLES, accessor.count, GL.GL_UNSIGNED_INT, ctypes.c_void_p(accessor.byteOffset))
 
     def draw_node(self, node: pygltflib.Node, model_transform: glm.mat4, program: Shader):
+        if node.matrix:
+            model_transform = model_transform * glm.mat4(*node.matrix)
+
         if node.mesh:
             self.draw_mesh(self.gltf_object.gltf.meshes[node.mesh], model_transform, program)
         
         for n in node.children:
             child_node = self.gltf_object.gltf.nodes[n]
-            matrix = model_transform
-            if child_node.matrix:
-                matrix = glm.mat4(*child_node.matrix) * matrix
             
-            self.draw_node(child_node, matrix, program)
+            self.draw_node(child_node, model_transform, program)
 
     def render(self, program: Shader):
-        model_transform = glm.mat4()
+        model_transform = glm.rotate(math.radians(90), glm.vec3(1, 0, 0))
         scene = self.gltf_object.gltf.scenes[self.gltf_object.gltf.scene]
         for node in scene.nodes:
             self.draw_node(self.gltf_object.gltf.nodes[node], model_transform, program)
