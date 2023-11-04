@@ -6,6 +6,8 @@ import numpy as np
 import ctypes
 import glm
 import math
+from PIL import Image
+import io
 
 CUBE_FACES = [
     GL.GL_TEXTURE_CUBE_MAP_POSITIVE_X,
@@ -71,27 +73,54 @@ class GltfRenderer:
         self.buffers = []
         for view in self.gltf_object.gltf.bufferViews:
             buffer = GL.glGenBuffers(1)
-            buffer_types = {
-                pygltflib.ARRAY_BUFFER : GL.GL_ARRAY_BUFFER,
-                pygltflib.ELEMENT_ARRAY_BUFFER : GL.GL_ELEMENT_ARRAY_BUFFER
-            }
             if view.target:
-                target = buffer_types[view.target]
-                GL.glBindBuffer(target, buffer)
+                GL.glBindBuffer(view.target, buffer)
                 m = data[view.byteOffset:view.byteOffset + view.byteLength]
-                GL.glBufferData(target, view.byteLength, np.array(m), GL.GL_STATIC_DRAW)
-                GL.glBindBuffer(target, 0)
+                GL.glBufferData(view.target, view.byteLength, np.array(m), GL.GL_STATIC_DRAW)
+                GL.glBindBuffer(view.target, 0)
             self.buffers.append(buffer)
+
+        self.textures = []
+        for texture in self.gltf_object.gltf.textures:
+            image = self.gltf_object.gltf.images[texture.source]
+            sampler = self.gltf_object.gltf.samplers[texture.sampler]
+            view = self.gltf_object.gltf.bufferViews[image.bufferView]
+            imagedata = data[view.byteOffset:view.byteOffset + view.byteLength]
+            file = io.BytesIO(imagedata)
+            pil_image = Image.open(file).convert('RGB')
+            tex = GL.glGenTextures(1)
+            GL.glActiveTexture(GL.GL_TEXTURE0)
+            GL.glBindTexture(GL.GL_TEXTURE_2D, tex)
+            GL.glTexImage2D(GL.GL_TEXTURE_2D, 0, GL.GL_RGB, pil_image.width, pil_image.height, 0, GL.GL_RGB, GL.GL_UNSIGNED_BYTE, pil_image.tobytes())
+            GL.glGenerateMipmap(GL.GL_TEXTURE_2D)
+            GL.glTexParameteri(GL.GL_TEXTURE_2D, GL.GL_TEXTURE_MIN_FILTER, sampler.minFilter)
+            GL.glTexParameteri(GL.GL_TEXTURE_2D, GL.GL_TEXTURE_MAG_FILTER, sampler.magFilter)
+            GL.glTexParameteri(GL.GL_TEXTURE_2D, GL.GL_TEXTURE_WRAP_S, sampler.wrapS)
+            GL.glTexParameteri(GL.GL_TEXTURE_2D, GL.GL_TEXTURE_WRAP_T, sampler.wrapT)
+            self.textures.append(tex)
 
     def draw_mesh(self, mesh: pygltflib.Mesh, model_transform: glm.mat4, program: Shader):
         GL.glUniformMatrix4fv(program.uniform_location('model_transform'), 1, False, glm.value_ptr(model_transform))
 
         for primitive in mesh.primitives:
-            location = program.uniform_location('color')
-            if location != -1:
-                material = self.gltf_object.gltf.materials[primitive.material]
-                color = material.pbrMetallicRoughness.baseColorFactor
-                GL.glUniform4fv(location, 1, color)
+            material = self.gltf_object.gltf.materials[primitive.material]
+
+            if material.pbrMetallicRoughness:
+                baseColorTexture = material.pbrMetallicRoughness.baseColorTexture
+                if baseColorTexture:
+                    location = program.uniform_location('color_texture')
+                    if location != -1:
+                        tex = baseColorTexture.index
+                        GL.glActiveTexture(GL.GL_TEXTURE1)
+                        GL.glBindTexture(GL.GL_TEXTURE_2D, self.textures[tex])
+                        GL.glUniform1iv(location, 1, 1)
+                        GL.glUniform1iv(program.uniform_location('has_color_texture'), 1, 1)
+                else:
+                    location = program.uniform_location('base_color')
+                    if location != -1:
+                        color = material.pbrMetallicRoughness.baseColorFactor
+                        GL.glUniform4fv(location, 1, color)
+                        GL.glUniform1iv(program.uniform_location('has_color_texture'), 1, 0)
 
             accessor = self.gltf_object.gltf.accessors[primitive.attributes.POSITION]
             buffer = self.buffers[accessor.bufferView]
@@ -104,7 +133,14 @@ class GltfRenderer:
                 buffer = self.buffers[accessor.bufferView]
                 GL.glBindBuffer(GL.GL_ARRAY_BUFFER, buffer)
                 GL.glVertexAttribPointer(location, 3, GL.GL_FLOAT, GL.GL_FALSE, 0, ctypes.c_void_p(accessor.byteOffset))
-        
+
+            location = program.attribute_location('texcoord')
+            if location != -1 and primitive.attributes.TEXCOORD_0 is not None:
+                accessor = self.gltf_object.gltf.accessors[primitive.attributes.TEXCOORD_0]
+                buffer = self.buffers[accessor.bufferView]
+                GL.glBindBuffer(GL.GL_ARRAY_BUFFER, buffer)
+                GL.glVertexAttribPointer(location, 2, GL.GL_FLOAT, GL.GL_FALSE, 0, ctypes.c_void_p(accessor.byteOffset))
+
             accessor = self.gltf_object.gltf.accessors[primitive.indices]
             buffer = self.buffers[accessor.bufferView]
             GL.glBindBuffer(GL.GL_ELEMENT_ARRAY_BUFFER, buffer)
@@ -114,7 +150,7 @@ class GltfRenderer:
         if node.matrix:
             model_transform = model_transform * glm.mat4(*node.matrix)
 
-        if node.mesh:
+        if node.mesh is not None:
             self.draw_mesh(self.gltf_object.gltf.meshes[node.mesh], model_transform, program)
         
         for n in node.children:
@@ -251,6 +287,7 @@ class Renderer:
             GL.glUseProgram(program.program)
             GL.glEnableVertexAttribArray(program.attribute_location('position'))
             GL.glEnableVertexAttribArray(program.attribute_location('normal'))
+            GL.glEnableVertexAttribArray(program.attribute_location('texcoord'))
 
             projection_transform = self.scene.camera.projection_transform(float(width) / float(height))
             projection_transform = projection_transform * glm.rotate(math.radians(-90), glm.vec3(1, 0, 0))
@@ -269,12 +306,14 @@ class Renderer:
             GL.glUseProgram(0)
             GL.glDisableVertexAttribArray(program.attribute_location('position'))
             GL.glDisableVertexAttribArray(program.attribute_location('normal'))
+            GL.glDisableVertexAttribArray(program.attribute_location('texcoord'))
 
         GL.glBindFramebuffer(GL.GL_FRAMEBUFFER, default_fbo)
         GL.glViewport(0, 0, width, height)
         
         GL.glDisable(GL.GL_DEPTH_TEST)
         GL.glUseProgram(self.postproc_program.program)
+        GL.glActiveTexture(GL.GL_TEXTURE0)
         GL.glBindTexture(GL.GL_TEXTURE_2D, self.render_color_texture)
         GL.glUniform1i(self.postproc_program.uniform_location('frame'), 0)
 

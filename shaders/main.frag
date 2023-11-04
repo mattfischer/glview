@@ -1,14 +1,23 @@
 #version 130
 
-uniform vec4 color;
+uniform vec4 base_color;
+uniform sampler2D color_texture;
+uniform bool has_color_texture;
 uniform vec3 light_position;
 uniform samplerCubeShadow shadow_texture;
 
 varying vec3 frag_pos;
 varying vec3 frag_normal;
-
+varying vec2 frag_texcoord;
 void main()
 {
+    vec4 color;
+    if(has_color_texture) {
+        color = texture(color_texture, frag_texcoord);
+    } else {
+        color = base_color;
+    }
+
     vec3 light_vec = frag_pos - light_position;
     float light_dist = length(light_vec);
     float shade = max(-dot(light_vec / light_dist, frag_normal), 0);

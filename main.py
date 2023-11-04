@@ -90,6 +90,9 @@ app = QtWidgets.QApplication()
 # https://sketchfab.com/3d-models/lowpoly-fps-tdm-game-map-d41a19f699ea421a9aa32b407cb7537b
 gltf_object = GltfObject('lowpoly__fps__tdm__game__map.glb')
 
+# https://sketchfab.com/3d-models/viking-room-6d61f7f0b597490aab7afa003e4ec725
+# gltf_object = GltfObject('viking_room.glb')
+
 camera = Camera(glm.vec3(0, 0, .5), 50)
 light = Light(glm.vec3(8, 11, 8))
 scene = Scene([gltf_object], camera, light)
