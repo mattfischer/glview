@@ -1,7 +1,7 @@
 from PySide2 import QtGui
 from PySide2.QtCore import Qt
 
-from objects import Scene
+from scene import Scene
 import glm
 import math
 

@@ -2,27 +2,28 @@ from PySide2 import QtCore, QtWidgets, QtGui
 from PySide2.QtCore import Slot
 from PySide2.QtCore import Qt
 
-from render import Renderer
-from objects import Camera, Light, GltfObject, Scene
+from scene import Scene
+from lights import Light
+from objects import Camera, GltfObject
 from input import InputController
 
 import glm
 import time
 
 class GLWidget(QtWidgets.QOpenGLWidget):
-    def __init__(self, renderer: Renderer, parent: QtWidgets.QWidget = None):
+    def __init__(self, scene: Scene, parent: QtWidgets.QWidget = None):
         super(GLWidget, self).__init__(parent)
-        self.renderer = renderer
+        self.scene = scene
         self.last_time = time.time()
         self.render_time = 0
         self.render_frames = 0
 
     def initializeGL(self):
-        self.renderer.init_gl(self.width(), self.height())
+        self.scene.init_gl(self.width(), self.height())
 
     def paintGL(self):
         start = time.time()
-        self.renderer.render(self.width(), self.height())
+        self.scene.render(self.width(), self.height())
         end = time.time()
         self.render_time += (end - start)
         self.render_frames += 1
@@ -33,11 +34,11 @@ class GLWidget(QtWidgets.QOpenGLWidget):
             self.last_time = end
 
 class MainWindow(QtWidgets.QMainWindow):
-    def __init__(self, renderer: Renderer, parent: QtWidgets.QWidget = None):
+    def __init__(self, scene: Scene, parent: QtWidgets.QWidget = None):
         QtWidgets.QMainWindow.__init__(self, parent)
-        self.renderer = renderer
-        self.input_controller = InputController(renderer.scene)
-        self.gl_widget = GLWidget(renderer)
+        self.scene = scene
+        self.input_controller = InputController(scene)
+        self.gl_widget = GLWidget(scene)
         self.setCentralWidget(self.gl_widget)
         self.setFixedSize(1600, 1200)
 
@@ -97,8 +98,7 @@ camera = Camera(glm.vec3(0, 0, .5), 50)
 light = Light(glm.vec3(8, 11, 8))
 scene = Scene([gltf_object], camera, light)
 
-renderer = Renderer(scene)
-window = MainWindow(renderer)
+window = MainWindow(scene)
 window.show()
 
 app.exec_()
