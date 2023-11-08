@@ -8,6 +8,7 @@ import glm
 import math
 from PIL import Image
 import io
+import sys
 
 CUBE_FACES = [
     GL.GL_TEXTURE_CUBE_MAP_POSITIVE_X,
@@ -29,11 +30,6 @@ class Shader:
             self.uniforms[name] = GL.glGetUniformLocation(self.program, name)
         return self.uniforms[name]
 
-    def attribute_location(self, name):
-        if name not in self.attributes:
-            self.attributes[name] = GL.glGetAttribLocation(self.program, name)
-        return self.attributes[name]
-
 class ShaderCache:
     def __init__(self):
         self.cache = {}
@@ -46,6 +42,10 @@ class ShaderCache:
                 source = file.read()
                 GL.glShaderSource(shader, [source])
                 GL.glCompileShader(shader)
+                if GL.glGetShaderiv(shader, GL.GL_COMPILE_STATUS) == GL.GL_FALSE:
+                    log = GL.glGetShaderInfoLog(shader)
+                    print(log)
+                    sys.exit(1)
                 GL.glAttachShader(program, shader)
 
             with open('shaders/%s.frag' % name) as file:
@@ -53,9 +53,18 @@ class ShaderCache:
                 source = file.read()
                 GL.glShaderSource(shader, [source])
                 GL.glCompileShader(shader)
+                if GL.glGetShaderiv(shader, GL.GL_COMPILE_STATUS) == GL.GL_FALSE:
+                    log = GL.glGetShaderInfoLog(shader)
+                    print(log)
+                    sys.exit(1)
                 GL.glAttachShader(program, shader)
 
             GL.glLinkProgram(program)
+            if GL.glGetProgramiv(program, GL.GL_LINK_STATUS) == GL.GL_FALSE:
+                log = GL.glGetProgramInfoLog(program)
+                print(log)
+                sys.exit(1)
+            
             self.cache[name] = Shader(program)
 
         return self.cache[name]
@@ -99,10 +108,44 @@ class GltfRenderer:
             GL.glTexParameteri(GL.GL_TEXTURE_2D, GL.GL_TEXTURE_WRAP_T, sampler.wrapT)
             self.textures.append(tex)
 
-    def draw_mesh(self, mesh: pygltflib.Mesh, model_transform: glm.mat4, program: Shader):
+        self.mesh_vaos = []
+        for mesh in self.gltf_object.gltf.meshes:
+            primitive_vaos = []
+            for primitive in mesh.primitives:
+                vao = GL.glGenVertexArrays(1)
+                GL.glBindVertexArray(vao)
+
+                GL.glEnableVertexAttribArray(0)
+                GL.glEnableVertexAttribArray(1)
+                GL.glEnableVertexAttribArray(2)
+
+                accessor = self.gltf_object.gltf.accessors[primitive.attributes.POSITION]
+                buffer = self.buffers[accessor.bufferView]
+                GL.glBindBuffer(GL.GL_ARRAY_BUFFER, buffer)
+                GL.glVertexAttribPointer(0, 3, GL.GL_FLOAT, GL.GL_FALSE, 0, ctypes.c_void_p(accessor.byteOffset))
+            
+                accessor = self.gltf_object.gltf.accessors[primitive.attributes.NORMAL]
+                buffer = self.buffers[accessor.bufferView]
+                GL.glBindBuffer(GL.GL_ARRAY_BUFFER, buffer)
+                GL.glVertexAttribPointer(1, 3, GL.GL_FLOAT, GL.GL_FALSE, 0, ctypes.c_void_p(accessor.byteOffset))
+
+                if primitive.attributes.TEXCOORD_0 is not None:
+                    accessor = self.gltf_object.gltf.accessors[primitive.attributes.TEXCOORD_0]
+                    buffer = self.buffers[accessor.bufferView]
+                    GL.glBindBuffer(GL.GL_ARRAY_BUFFER, buffer)
+                    GL.glVertexAttribPointer(2, 2, GL.GL_FLOAT, GL.GL_FALSE, 0, ctypes.c_void_p(accessor.byteOffset))
+
+                accessor = self.gltf_object.gltf.accessors[primitive.indices]
+                buffer = self.buffers[accessor.bufferView]
+                GL.glBindBuffer(GL.GL_ELEMENT_ARRAY_BUFFER, buffer)
+                
+                primitive_vaos.append(vao)
+            self.mesh_vaos.append(primitive_vaos)
+        
+    def draw_mesh(self, mesh: pygltflib.Mesh, model_transform: glm.mat4, program: Shader, primitive_vaos):
         GL.glUniformMatrix4fv(program.uniform_location('model_transform'), 1, False, glm.value_ptr(model_transform))
 
-        for primitive in mesh.primitives:
+        for (primitive, vao) in zip(mesh.primitives, primitive_vaos):
             material = self.gltf_object.gltf.materials[primitive.material]
 
             if material.pbrMetallicRoughness:
@@ -122,28 +165,8 @@ class GltfRenderer:
                         GL.glUniform4fv(location, 1, color)
                         GL.glUniform1iv(program.uniform_location('has_color_texture'), 1, 0)
 
-            accessor = self.gltf_object.gltf.accessors[primitive.attributes.POSITION]
-            buffer = self.buffers[accessor.bufferView]
-            GL.glBindBuffer(GL.GL_ARRAY_BUFFER, buffer)
-            GL.glVertexAttribPointer(program.attribute_location('position'), 3, GL.GL_FLOAT, GL.GL_FALSE, 0, ctypes.c_void_p(accessor.byteOffset))
-        
-            location = program.attribute_location('normal')
-            if location != -1:    
-                accessor = self.gltf_object.gltf.accessors[primitive.attributes.NORMAL]
-                buffer = self.buffers[accessor.bufferView]
-                GL.glBindBuffer(GL.GL_ARRAY_BUFFER, buffer)
-                GL.glVertexAttribPointer(location, 3, GL.GL_FLOAT, GL.GL_FALSE, 0, ctypes.c_void_p(accessor.byteOffset))
-
-            location = program.attribute_location('texcoord')
-            if location != -1 and primitive.attributes.TEXCOORD_0 is not None:
-                accessor = self.gltf_object.gltf.accessors[primitive.attributes.TEXCOORD_0]
-                buffer = self.buffers[accessor.bufferView]
-                GL.glBindBuffer(GL.GL_ARRAY_BUFFER, buffer)
-                GL.glVertexAttribPointer(location, 2, GL.GL_FLOAT, GL.GL_FALSE, 0, ctypes.c_void_p(accessor.byteOffset))
-
+            GL.glBindVertexArray(vao)
             accessor = self.gltf_object.gltf.accessors[primitive.indices]
-            buffer = self.buffers[accessor.bufferView]
-            GL.glBindBuffer(GL.GL_ELEMENT_ARRAY_BUFFER, buffer)
             GL.glDrawElements(GL.GL_TRIANGLES, accessor.count, GL.GL_UNSIGNED_INT, ctypes.c_void_p(accessor.byteOffset))
 
     def draw_node(self, node: pygltflib.Node, model_transform: glm.mat4, program: Shader):
@@ -151,7 +174,7 @@ class GltfRenderer:
             model_transform = model_transform * glm.mat4(*node.matrix)
 
         if node.mesh is not None:
-            self.draw_mesh(self.gltf_object.gltf.meshes[node.mesh], model_transform, program)
+            self.draw_mesh(self.gltf_object.gltf.meshes[node.mesh], model_transform, program, self.mesh_vaos[node.mesh])
         
         for n in node.children:
             child_node = self.gltf_object.gltf.nodes[n]
@@ -194,7 +217,6 @@ class ShadowRenderer:
 
         GL.glBindFramebuffer(GL.GL_FRAMEBUFFER, self.shadow_fbo)
         GL.glUseProgram(self.shadow_program.program)
-        GL.glEnableVertexAttribArray(self.shadow_program.attribute_location('position'))
         GL.glViewport(0, 0, 1024, 1024)
 
         for face in CUBE_FACES:
@@ -224,7 +246,6 @@ class ShadowRenderer:
                 obj.renderer.render(self.shadow_program)
         
         GL.glUseProgram(0)
-        GL.glDisableVertexAttribArray(self.shadow_program.attribute_location('position'))
 
         self.light.need_shadow_render = False
 
@@ -285,9 +306,6 @@ class Renderer:
         for obj in self.scene.objects:
             program = obj.renderer.program
             GL.glUseProgram(program.program)
-            GL.glEnableVertexAttribArray(program.attribute_location('position'))
-            GL.glEnableVertexAttribArray(program.attribute_location('normal'))
-            GL.glEnableVertexAttribArray(program.attribute_location('texcoord'))
 
             projection_transform = self.scene.camera.projection_transform(float(width) / float(height))
             projection_transform = projection_transform * glm.rotate(math.radians(-90), glm.vec3(1, 0, 0))
@@ -304,9 +322,6 @@ class Renderer:
             obj.renderer.render(program)
             
             GL.glUseProgram(0)
-            GL.glDisableVertexAttribArray(program.attribute_location('position'))
-            GL.glDisableVertexAttribArray(program.attribute_location('normal'))
-            GL.glDisableVertexAttribArray(program.attribute_location('texcoord'))
 
         GL.glBindFramebuffer(GL.GL_FRAMEBUFFER, default_fbo)
         GL.glViewport(0, 0, width, height)
