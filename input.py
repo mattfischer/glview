@@ -1,51 +1,68 @@
-from PySide2 import QtGui
-from PySide2.QtCore import Qt
-
 from scene import Scene
 import glm
 import math
+import glfw
 
 class InputController:
-    def __init__(self, scene: Scene):
+    def __init__(self, scene: Scene, window):
         self.scene = scene
+        self.window = window
+        self.grabbed_mouse = False
+        self.last_cursor = (0, 0)
 
-    def update(self, keys: dict[Qt.Key, bool], mouse_delta: QtGui.QVector2D, delta_time: float):
+    def update(self, delta_time: float):
+        if glfw.get_mouse_button(self.window, glfw.MOUSE_BUTTON_LEFT) == glfw.PRESS:
+            self.grabbed_mouse = True
+            glfw.set_input_mode(self.window, glfw.CURSOR, glfw.CURSOR_DISABLED)
+            self.last_cursor = glfw.get_cursor_pos(self.window)
+
+        if glfw.get_key(self.window, glfw.KEY_ESCAPE) == glfw.PRESS:
+            self.grabbed_mouse = False
+            glfw.set_input_mode(self.window, glfw.CURSOR, glfw.CURSOR_NORMAL)
+
+        mouse_delta = (0, 0)
+        if self.grabbed_mouse:
+            cursor_pos = glfw.get_cursor_pos(self.window)
+            mouse_delta = (cursor_pos[0] - self.last_cursor[0], cursor_pos[1] - self.last_cursor[1])
+            self.last_cursor = cursor_pos
+
         rotate_speed = 0.05
-        self.scene.camera.orientation += rotate_speed * glm.vec3(mouse_delta.y(), mouse_delta.x(), 0)
+        self.scene.camera.orientation += rotate_speed * glm.vec3(mouse_delta[1], mouse_delta[0], 0)
         self.scene.camera.orientation.x = min(max(self.scene.camera.orientation.x, -45), 45)
 
         light_dirs = glm.vec3()
         light_key_map = {
-            Qt.Key_I: (0, 1, 0),
-            Qt.Key_J: (-1, 0, 0),
-            Qt.Key_K: (0, -1, 0),
-            Qt.Key_L: (1, 0, 0),
-            Qt.Key_U: (0, 0, -1),
-            Qt.Key_O: (0, 0, 1),
+            glfw.KEY_I: (0, 1, 0),
+            glfw.KEY_J: (-1, 0, 0),
+            glfw.KEY_K: (0, -1, 0),
+            glfw.KEY_L: (1, 0, 0),
+            glfw.KEY_U: (0, 0, -1),
+            glfw.KEY_O: (0, 0, 1),
         }
         light_moved = False
         for key in light_key_map:
-            if(keys.get(key, False)):
+            if(glfw.get_key(self.window, key) == glfw.PRESS):
                 light_dirs = light_dirs + glm.vec3(*light_key_map[key])
                 light_moved = True
 
         light_velocity = 3.0
         self.scene.light.position += light_dirs * light_velocity * delta_time
-        self.scene.light.need_shadow_render = light_moved
+        if light_moved:
+            self.scene.light.need_shadow_render = True
 
         dirs = glm.vec3()
         key_map = {
-            Qt.Key_W: (0, 1, 0),
-            Qt.Key_A: (-1, 0, 0),
-            Qt.Key_S: (0, -1, 0),
-            Qt.Key_D: (1, 0, 0),
-            Qt.Key_Q: (0, 0, -1),
-            Qt.Key_E: (0, 0, 1),
+            glfw.KEY_W: (0, 1, 0),
+            glfw.KEY_A: (-1, 0, 0),
+            glfw.KEY_S: (0, -1, 0),
+            glfw.KEY_D: (1, 0, 0),
+            glfw.KEY_Q: (0, 0, -1),
+            glfw.KEY_E: (0, 0, 1),
         }
 
         accel = 15.0
         for key in key_map:
-            if(keys.get(key, False)):
+            if(glfw.get_key(self.window, key) == glfw.PRESS):
                 dirs = dirs + glm.vec3(*key_map[key])
         accel_vector = accel * dirs
 
