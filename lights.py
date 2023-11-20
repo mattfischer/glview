@@ -15,9 +15,10 @@ CUBE_FACES = [
 ]
 
 class Light:
-    def __init__(self, position: glm.vec3):
+    def __init__(self, position: glm.vec3, intensity: float):
         self.position = position
         self.need_shadow_render = True
+        self.intensity = intensity
 
     def init_gl(self, shader_cache: ShaderCache):
         self.shadow_program = shader_cache.get_shader('shadow')

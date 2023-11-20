@@ -14,7 +14,7 @@ gltf_object = GltfObject('lowpoly__fps__tdm__game__map.glb')
 # gltf_object = GltfObject('viking_room.glb')
 
 camera = Camera(glm.vec3(0, 0, .5), 50)
-light = Light(glm.vec3(8, 11, 8))
+light = Light(glm.vec3(8, 11, 8), 2000.0)
 scene = Scene([gltf_object], camera, light)
 
 glfw.init()

@@ -17,7 +17,7 @@ class Scene:
     def init_gl(self, width: int, height: int):
         GL.glEnable(GL.GL_DEPTH_TEST)
         GL.glEnable(GL.GL_CULL_FACE)
-        GL.glClearColor(.2, .2, .2, 1)
+        GL.glClearColor(.1, .1, .1, 1)
 
         for obj in self.objects:
             obj.init_gl(self.shader_cache)
@@ -71,6 +71,7 @@ class Scene:
             GL.glUniformMatrix4fv(program.uniform_location('projection_transform'), 1, GL.GL_FALSE, glm.value_ptr(projection_transform))
             GL.glUniformMatrix4fv(program.uniform_location('view_transform'), 1, GL.GL_FALSE, glm.value_ptr(view_transform))
             GL.glUniform3fv(program.uniform_location('light_position'), 1, glm.value_ptr(self.light.position))
+            GL.glUniform1f(program.uniform_location('light_intensity'), self.light.intensity)
             GL.glUniform1i(program.uniform_location('shadow_texture'), 0)
 
             GL.glActiveTexture(GL.GL_TEXTURE0)

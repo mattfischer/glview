@@ -121,7 +121,7 @@ class GltfObject:
                     location = program.uniform_location('base_color')
                     if location != -1:
                         color = material.pbrMetallicRoughness.baseColorFactor
-                        GL.glUniform4fv(location, 1, color)
+                        GL.glUniform3fv(location, 1, color)
                         GL.glUniform1iv(program.uniform_location('has_color_texture'), 1, 0)
 
             GL.glBindVertexArray(vao)

@@ -50,6 +50,16 @@ class InputController:
         if light_moved:
             self.scene.light.need_shadow_render = True
 
+        light_intensity_velocity = 500
+        light_intensity_key_map = {
+            glfw.KEY_M: -1,
+            glfw.KEY_N: 1
+        }
+        for key in light_intensity_key_map:
+            if(glfw.get_key(self.window, key) == glfw.PRESS):
+                self.scene.light.intensity += light_intensity_key_map[key] * light_intensity_velocity * delta_time
+                self.scene.light.intensity = max(self.scene.light.intensity, 0)
+
         dirs = glm.vec3()
         key_map = {
             glfw.KEY_W: (0, 1, 0),
