@@ -65,7 +65,6 @@ class Scene:
             GL.glUseProgram(program.program)
 
             projection_transform = self.camera.projection_transform(float(width) / float(height))
-            projection_transform = projection_transform * glm.rotate(math.radians(-90), glm.vec3(1, 0, 0))
             view_transform = self.camera.view_transform()
             
             GL.glUniformMatrix4fv(program.uniform_location('projection_transform'), 1, GL.GL_FALSE, glm.value_ptr(projection_transform))

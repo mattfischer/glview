@@ -20,7 +20,7 @@ class Camera:
     def view_transform(self) -> glm.mat4:
         transform = glm.mat4()
         transform = transform * glm.rotate(math.radians(self.orientation.x), glm.vec3(1, 0, 0))
-        transform = transform * glm.rotate(math.radians(self.orientation.y), glm.vec3(0, 0, 1))
+        transform = transform * glm.rotate(math.radians(self.orientation.y), glm.vec3(0, 1, 0))
         transform = transform * glm.translate(-self.position)
         return transform
 
@@ -141,7 +141,7 @@ class GltfObject:
             self.draw_node(child_node, model_transform, program)
 
     def render(self, program: Shader):
-        model_transform = glm.rotate(math.radians(90), glm.vec3(1, 0, 0))
+        model_transform = glm.mat4()
         scene = self.gltf.scenes[self.gltf.scene]
         for node in scene.nodes:
             self.draw_node(self.gltf.nodes[node], model_transform, program)

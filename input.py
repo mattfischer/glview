@@ -32,12 +32,12 @@ class InputController:
 
         light_dirs = glm.vec3()
         light_key_map = {
-            glfw.KEY_I: (0, 1, 0),
+            glfw.KEY_I: (0, 0, -1),
             glfw.KEY_J: (-1, 0, 0),
-            glfw.KEY_K: (0, -1, 0),
+            glfw.KEY_K: (0, 0, 1),
             glfw.KEY_L: (1, 0, 0),
-            glfw.KEY_U: (0, 0, -1),
-            glfw.KEY_O: (0, 0, 1),
+            glfw.KEY_U: (0, -1, 0),
+            glfw.KEY_O: (0, 1, 0),
         }
         light_moved = False
         for key in light_key_map:
@@ -62,12 +62,12 @@ class InputController:
 
         dirs = glm.vec3()
         key_map = {
-            glfw.KEY_W: (0, 1, 0),
+            glfw.KEY_W: (0, 0, -1),
             glfw.KEY_A: (-1, 0, 0),
-            glfw.KEY_S: (0, -1, 0),
+            glfw.KEY_S: (0, 0, 1),
             glfw.KEY_D: (1, 0, 0),
-            glfw.KEY_Q: (0, 0, -1),
-            glfw.KEY_E: (0, 0, 1),
+            glfw.KEY_Q: (0, -1, 0),
+            glfw.KEY_E: (0, 1, 0),
         }
 
         accel = 15.0
@@ -77,7 +77,7 @@ class InputController:
         accel_vector = accel * dirs
 
         matrix = glm.mat4()
-        matrix = matrix * glm.rotate(math.radians(self.scene.camera.orientation.y), glm.vec3(0, 0, 1))
+        matrix = matrix * glm.rotate(math.radians(self.scene.camera.orientation.y), glm.vec3(0, 1, 0))
 
         drag = 15.0
         drag_vector = matrix * (-self.scene.camera.velocity * drag)
@@ -87,7 +87,7 @@ class InputController:
         if accel_vector.z == 0: accel_vector.z = drag_vector.z
 
         matrix = glm.mat4()
-        matrix = matrix * glm.rotate(math.radians(-self.scene.camera.orientation.y), glm.vec3(0, 0, 1))
+        matrix = matrix * glm.rotate(math.radians(-self.scene.camera.orientation.y), glm.vec3(0, 1, 0))
 
         self.scene.camera.velocity += matrix * (accel_vector * delta_time)
         max_velocity = 7.0

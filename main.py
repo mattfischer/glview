@@ -13,8 +13,8 @@ gltf_object = GltfObject('lowpoly__fps__tdm__game__map.glb')
 # https://sketchfab.com/3d-models/viking-room-6d61f7f0b597490aab7afa003e4ec725
 # gltf_object = GltfObject('viking_room.glb')
 
-camera = Camera(glm.vec3(0, 0, .5), 50)
-light = Light(glm.vec3(8, 11, 8), 2000.0)
+camera = Camera(glm.vec3(0, .5, 0), 50)
+light = Light(glm.vec3(8, 8, -11), 2000.0)
 scene = Scene([gltf_object], camera, light)
 
 glfw.init()
