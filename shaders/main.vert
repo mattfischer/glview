@@ -14,6 +14,6 @@ void main()
 {
     gl_Position = projection_transform * view_transform * model_transform * vec4(position, 1);
     frag_pos = (model_transform * vec4(position, 1)).xyz;
-    frag_normal = normal;
+    frag_normal = (model_transform * vec4(normal, 0)).xyz;
     frag_texcoord = texcoord;
 }
