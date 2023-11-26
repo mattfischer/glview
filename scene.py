@@ -1,6 +1,6 @@
 from OpenGL import GL
 
-from objects import GltfObject, Camera
+from objects import GltfObject, Camera, Skybox
 from lights import Light
 from shaders import ShaderCache
 
@@ -8,10 +8,11 @@ import glm
 import math
 
 class Scene:
-    def __init__(self, objects: list[GltfObject], camera: Camera, light: Light):
+    def __init__(self, objects: list[GltfObject], camera: Camera, light: Light, skybox: Skybox):
         self.objects = objects
         self.camera = camera
         self.light = light
+        self.skybox = skybox
         self.shader_cache = ShaderCache()
 
     def init_gl(self, width: int, height: int):
@@ -22,6 +23,7 @@ class Scene:
         for obj in self.objects:
             obj.init_gl(self.shader_cache)
         self.light.init_gl(self.shader_cache)
+        self.skybox.init_gl(self.shader_cache)
 
         self.render_color_texture = GL.glGenTextures(1)
         GL.glBindTexture(GL.GL_TEXTURE_2D, self.render_color_texture)
@@ -60,12 +62,12 @@ class Scene:
         GL.glClear(GL.GL_DEPTH_BUFFER_BIT)
         GL.glViewport(0, 0, width, height)
 
+        projection_transform = self.camera.projection_transform(float(width) / float(height))
+        view_transform = self.camera.view_transform()
+
         for obj in self.objects:
             program = obj.program
             GL.glUseProgram(program.program)
-
-            projection_transform = self.camera.projection_transform(float(width) / float(height))
-            view_transform = self.camera.view_transform()
             
             GL.glUniformMatrix4fv(program.uniform_location('projection_transform'), 1, GL.GL_FALSE, glm.value_ptr(projection_transform))
             GL.glUniformMatrix4fv(program.uniform_location('view_transform'), 1, GL.GL_FALSE, glm.value_ptr(view_transform))
@@ -79,6 +81,14 @@ class Scene:
             obj.render(program)
             
             GL.glUseProgram(0)
+
+        program = self.skybox.program
+        GL.glUseProgram(program.program)
+        
+        GL.glUniformMatrix4fv(program.uniform_location('projection_transform'), 1, GL.GL_FALSE, glm.value_ptr(projection_transform))
+        GL.glUniformMatrix4fv(program.uniform_location('view_transform'), 1, GL.GL_FALSE, glm.value_ptr(view_transform))
+        self.skybox.render()        
+        GL.glUseProgram(0)
 
         GL.glBindFramebuffer(GL.GL_FRAMEBUFFER, default_fbo)
         GL.glViewport(0, 0, width, height)

@@ -145,3 +145,70 @@ class GltfObject:
         scene = self.gltf.scenes[self.gltf.scene]
         for node in scene.nodes:
             self.draw_node(self.gltf.nodes[node], model_transform, program)
+
+class Skybox:
+    def __init__(self, filename):
+        self.filename = filename
+
+    def init_gl(self, shader_cache: ShaderCache):
+        self.program = shader_cache.get_shader('skybox')
+
+        self.vao = GL.glGenVertexArrays(1)
+        GL.glBindVertexArray(self.vao)
+
+        GL.glEnableVertexAttribArray(0)
+                
+        self.vertex_buffer = GL.glGenBuffers(1)
+        GL.glBindBuffer(GL.GL_ARRAY_BUFFER, self.vertex_buffer)
+        vertex_data = np.array([-1.0, -1.0, -1.0,  1.0, -1.0, -1.0,
+                                -1.0,  1.0, -1.0,  1.0,  1.0, -1.0,
+                                -1.0, -1.0,  1.0,  1.0, -1.0,  1.0,
+                                -1.0,  1.0,  1.0,  1.0,  1.0,  1.0], np.float32)
+        GL.glBufferData(GL.GL_ARRAY_BUFFER, vertex_data, GL.GL_STATIC_DRAW)
+        GL.glVertexAttribPointer(0, 3, GL.GL_FLOAT, GL.GL_FALSE, 0, ctypes.c_void_p(0))
+
+        self.index_buffer = GL.glGenBuffers(1)
+        GL.glBindBuffer(GL.GL_ELEMENT_ARRAY_BUFFER, self.index_buffer)
+        index_data = np.array([2, 3, 6,  3, 7, 6,  0, 4, 5,  0, 5, 1,
+                               0, 2, 6,  0, 6, 4,  1, 5, 7,  1, 7, 3,
+                               0, 1, 2,  2, 1, 3,  4, 6, 7,  4, 7, 5], np.uint32)
+
+        GL.glBufferData(GL.GL_ELEMENT_ARRAY_BUFFER, index_data, GL.GL_STATIC_DRAW)
+        GL.glBindVertexArray(0)
+
+        pil_image = Image.open(self.filename)
+        self.texture = GL.glGenTextures(1)
+        GL.glActiveTexture(GL.GL_TEXTURE0)
+        GL.glBindTexture(GL.GL_TEXTURE_CUBE_MAP, self.texture)
+        GL.glTexParameteri(GL.GL_TEXTURE_CUBE_MAP, GL.GL_TEXTURE_MIN_FILTER, GL.GL_LINEAR)
+        GL.glTexParameteri(GL.GL_TEXTURE_CUBE_MAP, GL.GL_TEXTURE_MAG_FILTER, GL.GL_LINEAR)
+        
+        face_size = pil_image.width / 4
+
+        face_map = {
+            GL.GL_TEXTURE_CUBE_MAP_POSITIVE_X: (face_size * 2, face_size),
+            GL.GL_TEXTURE_CUBE_MAP_NEGATIVE_X: (0, face_size),
+            GL.GL_TEXTURE_CUBE_MAP_POSITIVE_Y: (face_size, 0),
+            GL.GL_TEXTURE_CUBE_MAP_NEGATIVE_Y: (face_size, face_size * 2),
+            GL.GL_TEXTURE_CUBE_MAP_POSITIVE_Z: (face_size, face_size),
+            GL.GL_TEXTURE_CUBE_MAP_NEGATIVE_Z: (face_size * 3, face_size)
+        }
+
+        for face in face_map:
+            (x, y) = face_map[face]
+            face_image = pil_image.crop((x, y, x + face_size, y + face_size))
+            GL.glTexImage2D(face, 0, GL.GL_RGB, face_size, face_size, 0, GL.GL_RGB, GL.GL_UNSIGNED_BYTE, face_image.tobytes())
+        GL.glGenerateMipmap(GL.GL_TEXTURE_CUBE_MAP)
+        GL.glEnable(GL.GL_TEXTURE_CUBE_MAP_SEAMLESS)
+
+    def render(self):
+        GL.glDepthFunc(GL.GL_LEQUAL)
+        GL.glBindVertexArray(self.vao)
+
+        GL.glActiveTexture(GL.GL_TEXTURE0)
+        GL.glBindTexture(GL.GL_TEXTURE_CUBE_MAP, self.texture)
+        GL.glUniform1iv(self.program.uniform_location('skybox_texture'), 1, 0)
+    
+        GL.glDrawElements(GL.GL_TRIANGLES, 12 * 3, GL.GL_UNSIGNED_INT, ctypes.c_void_p(0))
+        GL.glBindVertexArray(0)
+        GL.glDepthFunc(GL.GL_LESS)

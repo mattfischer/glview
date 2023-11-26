@@ -1,6 +1,6 @@
 from scene import Scene
 from lights import Light
-from objects import Camera, GltfObject
+from objects import Camera, GltfObject, Skybox
 from input import InputController
 
 import glfw
@@ -15,7 +15,8 @@ gltf_object = GltfObject('lowpoly__fps__tdm__game__map.glb')
 
 camera = Camera(glm.vec3(0, .5, 0), 50)
 light = Light(glm.vec3(8, 8, -11), 2000.0)
-scene = Scene([gltf_object], camera, light)
+skybox = Skybox('skybox_texture.jpg')
+scene = Scene([gltf_object], camera, light, skybox)
 
 glfw.init()
 window = glfw.create_window(1600, 1200, 'glview', None, None)
